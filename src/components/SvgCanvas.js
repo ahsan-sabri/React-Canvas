@@ -14,6 +14,7 @@ function PolygonDrawer() {
   const [isClosed, setIsClosed] = useState(false);
   const [hoverFirstPoint, setHoverFirstPoint] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(.8);
+  const [actionHistory, setActionHistory] = useState([]);
 
   const PIXEL_PER_INCH = 4
 
@@ -98,6 +99,7 @@ function PolygonDrawer() {
         setLines([...lines, newline]);
       }
       setIsClosed(true);
+      addActionToHistory({ type: 'closePolygon' })
       return;
     }
 
@@ -106,6 +108,7 @@ function PolygonDrawer() {
     const newPoint = svgPos;
 
     setPoints([...points, newPoint]);
+    addActionToHistory({ type: 'addPoint', point: newPoint })
     setCurrentPoint(null);
 
     //draw line
@@ -142,24 +145,34 @@ function PolygonDrawer() {
     handlePointDragEnd();
   }
 
+  const handleMouseOutOfCanvas = (event) => {
+    setCurrentPoint(null)
+  }
+
   const handleZoom = (event) => {
     const newZoomLevel = event.target.value;
     setZoomLevel(newZoomLevel);
   }
 
-  const handlePointDrag = (index) => {
+  const handlePointDrag = (index, point) => {
     if (!isClosed) {
       return;
     }
 
-    const point = points[index]
+    const oldPoint = { ...point }
+    if (!dragPoint) {
+      addActionToHistory({ type: 'movePoint', index: index, point: oldPoint })
+    }
 
     setIsDragged(true)
-    setDragPoint(point)
+    const draggedPoint = points[index]
+    setDragPoint(draggedPoint)
+
   }
 
   const handlePointDragEnd = (event) => {
     setIsDragged(false)
+    setDragPoint(null)
   }
 
   const handleMouseEnterFirstPoint = () => {
@@ -219,6 +232,59 @@ function PolygonDrawer() {
     saveAs(blob, 'drawing.dxf');
   }
 
+  // Function to handle undo action
+  const handleUndo = () => {
+    if (actionHistory.length === 0) return;
+
+    const lastAction = actionHistory[actionHistory.length - 1];
+    const newHistory = actionHistory.slice(0, -1);
+
+    switch (lastAction.type) {
+      case 'addPoint':
+        if (lastAction.isClosed) {
+          setIsClosed(false)
+        }
+        const updatedPoints = points.slice(0, -1);
+        setPoints(updatedPoints);
+        updateLinesAfterPointsUpdate(updatedPoints)
+        break;
+      case 'movePoint':
+        console.log(lastAction);
+        const movedPoint = lastAction.point
+        const newPoints = [...points]
+        newPoints[lastAction.index] = movedPoint;
+        setPoints(newPoints);
+        updateLinesAfterPointsUpdate(newPoints)
+        break;
+      // case 'addBevel':
+      //   break;
+      // case 'changeLineLength':
+      //   break;
+      case 'closePolygon':
+        setIsClosed(false);
+        const updatedLines = lines.slice(0, -1);
+        setLines(updatedLines);
+        break;
+      default:
+        // Default action here
+        break;
+    }
+
+    setActionHistory(newHistory);
+  };
+
+  const handleClear = () => {
+    setPoints([])
+    setLines([])
+    setActionHistory([])
+    setIsClosed(null)
+    setZoomLevel(.8)
+  }
+
+  const handleResetZoom = () => {
+    setZoomLevel(.8)
+  }
+
   const getSvgPosition = (event) => {
     const svgRect = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - svgRect.left) / zoomLevel;
@@ -226,6 +292,13 @@ function PolygonDrawer() {
 
     return { x, y }
   }
+
+  // Function to add an action to history
+  const addActionToHistory = (action) => {
+    let prevHistory = [...actionHistory]
+    prevHistory.push(action)
+    setActionHistory(prevHistory);
+  };
 
   // New function to render the grid
   const renderGrid = () => {
@@ -268,7 +341,7 @@ function PolygonDrawer() {
         r={index === 0 && hoverFirstPoint && !isClosed ? "15" : "10"}
         fill="#bed929"
         cursor={"move"}
-        onMouseDown={() => handlePointDrag(index)}
+        onMouseDown={() => handlePointDrag(index, point)}
       />
     ));
   };
@@ -456,6 +529,7 @@ function PolygonDrawer() {
             onClick={handlePointClick}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseOutOfCanvas}
           >
             {renderGrid()}
             {renderPolygon()}
@@ -547,6 +621,11 @@ function PolygonDrawer() {
           </div>
           {/* button for export  */}
           <div>
+            <h1 >Action</h1>
+            <button onClick={handleResetZoom} style={{ marginRight: '20px' }}>Reset Zoom</button>
+            <button onClick={handleUndo} style={{ marginRight: '20px' }}>Undo</button>
+            <button onClick={handleClear}>Clear</button>
+
             <h1 >Export</h1>
             <button style={{ marginRight: '20px' }} onClick={handleExportDxf}>Export as DXF</button>
             <button onClick={handleExportDwg}>Export as DWG</button>
