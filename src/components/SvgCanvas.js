@@ -13,6 +13,7 @@ function PolygonDrawer() {
   const [isDragged, setIsDragged] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
   const [hoverFirstPoint, setHoverFirstPoint] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(.8);
 
   const PIXEL_PER_INCH = 4
 
@@ -141,6 +142,11 @@ function PolygonDrawer() {
     handlePointDragEnd();
   }
 
+  const handleZoom = (event) => {
+    const newZoomLevel = event.target.value;
+    setZoomLevel(newZoomLevel);
+  }
+
   const handlePointDrag = (index) => {
     if (!isClosed) {
       return;
@@ -215,8 +221,8 @@ function PolygonDrawer() {
 
   const getSvgPosition = (event) => {
     const svgRect = event.currentTarget.getBoundingClientRect();
-    const x = event.clientX - svgRect.left;
-    const y = event.clientY - svgRect.top;
+    const x = (event.clientX - svgRect.left) / zoomLevel;
+    const y = (event.clientY - svgRect.top) / zoomLevel;
 
     return { x, y }
   }
@@ -437,34 +443,41 @@ function PolygonDrawer() {
           </text>
           <line x1="30" y1="300" x2="30" y2="10" stroke="red" markerEnd="url(#arrow)" />
         </svg>
-        <svg
-          ref={svgRef}
-          width="960px"
-          height="720px"
-          style={{ border: '4px solid #D7DC3C', background: '#fff' }}
-          onClick={handlePointClick}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-        >
-          {renderGrid()}
-          {renderPolygon()}
-          {renderLines()}
-          {renderPoints()}
-          {hoverFirstPoint && !isClosed && (
-            <circle
-              cx={points.length > 0 ? points[0].x : 0}
-              cy={points.length > 0 ? points[0].y : 0}
-              r="10"
-              fill="#dfed91"
-              onMouseEnter={handleMouseEnterFirstPoint}
-              onMouseLeave={handleMouseLeaveFirstPoint}
-            />
-          )}
-        </svg>
+        {/* drawing canvas  */}
+        <div style={{ overflow: 'scroll', border: '4px dotted #D7DC3C' }}>
+          <svg
+            ref={svgRef}
+            width="960px"
+            height="720px"
+            style={{
+              background: '#fff',
+              transform: `scale(${zoomLevel})`, transformOrigin: '480 360'
+            }}
+            onClick={handlePointClick}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+          >
+            {renderGrid()}
+            {renderPolygon()}
+            {renderLines()}
+            {renderPoints()}
+            {hoverFirstPoint && !isClosed && (
+              <circle
+                cx={points.length > 0 ? points[0].x : 0}
+                cy={points.length > 0 ? points[0].y : 0}
+                r="10"
+                fill="#dfed91"
+                onMouseEnter={handleMouseEnterFirstPoint}
+                onMouseLeave={handleMouseLeaveFirstPoint}
+              />
+            )}
+          </svg>
+        </div>
+        {/* drawing canvas  */}
         <div
           width="500px"
           height="720px"
-          style={{ border: '4px solid #D7DC3C', background: '#fff', padding: '30px', marginLeft: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}
+          style={{ border: '4px solid #D7DC3C', background: '#fff', padding: '30px', marginLeft: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', textAlign: 'left' }}
         >
           <div>
             <h1>Line Metrics</h1>
@@ -512,15 +525,35 @@ function PolygonDrawer() {
                 </p>
               </div>
             )}
+            {
+              !selectedLine && (
+                <p>No line selected.</p>
+              )
+            }
+          </div>
+          <div>
+            <h1>Drawing Board Setting</h1>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <input
+                type="range"
+                min={.5}
+                max={3}
+                step={.1}
+                value={zoomLevel}
+                onChange={(e) => handleZoom(e)}
+              />
+              <span>Zoom Scale: {zoomLevel}</span>
+            </div>
           </div>
           {/* button for export  */}
           <div>
+            <h1 >Export</h1>
             <button style={{ marginRight: '20px' }} onClick={handleExportDxf}>Export as DXF</button>
             <button onClick={handleExportDwg}>Export as DWG</button>
           </div>
 
         </div>
-      </div >
+      </div>
     </div>
 
   );
