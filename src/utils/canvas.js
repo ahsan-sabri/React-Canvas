@@ -13,6 +13,25 @@ export const getAvaragePoint = (points) => {
   };
 };
 
+export const getBezierControlPoint = (x1, y1, x2, y2, curvature) => {
+  // Calculate midpoint
+  const midX = (x1 + x2) / 2;
+  const midY = (y1 + y2) / 2;
+
+  // Calculate angle
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+
+  // Calculate distance from midpoint to control point based on curvature
+  const distance = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2) / 2 * (-curvature / 100);
+
+  // Calculate control point coordinates
+  const controlX = midX + distance * Math.cos(angle + Math.PI / 2);
+  const controlY = midY + distance * Math.sin(angle + Math.PI / 2);
+
+  return { x: controlX, y: controlY };
+}
+
+
 export const getDistance = (node1, node2) => {
   let diffX = Math.abs(node1[0] - node2[0]);
   let diffY = Math.abs(node1[1] - node2[1]);

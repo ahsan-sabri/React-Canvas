@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { saveAs } from 'file-saver';
-import { convertSvgToDxf, convertSvgToDwg } from '../utils/canvas';
+import { convertSvgToDxf, convertSvgToDwg, getBezierControlPoint } from '../utils/canvas';
 import { getShapePoints } from '../utils/shapes';
 
 function PolygonDrawer() {
@@ -32,6 +32,7 @@ function PolygonDrawer() {
       y2: Math.round(point2.y),
       length: Math.round(Math.sqrt((point2.x - point1.x) ** 2 + (point2.y - point1.y) ** 2)),
       bevel: line ? line.bevel : 'none',
+      bezierCurvature: line ? line.bezierCurvature : 0,
     };
 
     return newLine;
@@ -278,6 +279,14 @@ function PolygonDrawer() {
     updateLinesAfterPointsUpdate(updatedPoints);
   };
 
+  // Update the handleBezierCurvatureChange function
+  const handleBezierCurvatureChange = (index, value) => {
+    console.log(value);
+    const updatedLines = [...lines];
+    updatedLines[index].bezierCurvature = value;
+    setLines(updatedLines);
+  };
+
   const handleBevelChange = (index, value) => {
     const updatedLines = [...lines]
     updatedLines[index].bevel = value
@@ -383,15 +392,31 @@ function PolygonDrawer() {
       const isSelected = selectedLineIndex === i;
 
       // Draw main line
-      rlines.push(
-        <line key={`line-${i}`}
-          x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
-          stroke={isSelected ? '#ff0000' : 'black'}
-          strokeWidth={isSelected ? 6 : 4}
-          cursor={"pointer"}
-          onClick={() => handleLineClick(i)}
-        />
-      );
+      if (line.bezierCurvature === 0) {
+        rlines.push(
+          <line key={`line-${i}`}
+            x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
+            stroke={isSelected ? '#ff0000' : 'black'}
+            strokeWidth={isSelected ? 6 : 4}
+            cursor={"pointer"}
+            onClick={() => handleLineClick(i)}
+          />
+        );
+      }
+      else {
+        const controlPoint = getBezierControlPoint(line.x1, line.y1, line.x2, line.y2, line.bezierCurvature)
+        rlines.push(
+          <path key={`line-${i}`}
+            d={`M ${line.x1} ${line.y1} Q ${controlPoint.x} ${controlPoint.y}, ${line.x2} ${line.y2}`}
+            stroke={isSelected ? '#ff0000' : 'black'}
+            fill={"transparent"}
+            strokeWidth={isSelected ? 6 : 4}
+            cursor={"pointer"}
+            onClick={() => handleLineClick(i)}
+          />
+        );
+      }
+
 
       // draw bevel 
       const bevel = renderBevel(line, i)
@@ -494,8 +519,28 @@ function PolygonDrawer() {
   const renderPolygon = () => {
     if (points.length < 3 || !isClosed) return null;
 
-    const pointsString = points.map(point => `${point.x},${point.y}`).join(' ');
-    return <polygon points={pointsString} fill="#00D2FF" />;
+    let pathString = `M ${points[0].x} ${points[0].y}`;
+    for (let i = 1; i < points.length; i++) {
+      const currentPoint = points[i];
+      const previousPoint = points[i - 1];
+
+      if (lines[i - 1].bezierCurvature !== 0) {
+        // Calculate control points for Bezier curve
+        const controlPoint = getBezierControlPoint(previousPoint.x, previousPoint.y, currentPoint.x, currentPoint.y, lines[i - 1].bezierCurvature);
+
+        // Append Bezier curve to path string
+        pathString += ` Q ${controlPoint.x},${controlPoint.y}, ${currentPoint.x},${currentPoint.y}`;
+      } else {
+        // Append line to path string
+        pathString += ` L ${currentPoint.x},${currentPoint.y}`;
+      }
+    }
+
+    // Close the path
+    pathString += ' Z';
+
+    // Return the path element
+    return <path d={pathString} fill="#00D2FF" />;
   };
 
   return (
@@ -583,7 +628,7 @@ function PolygonDrawer() {
         >
           <div>
             <h1>Line Metrics</h1>
-            {selectedLineIndex && (
+            {selectedLine && (
               <div style={{ textAlign: 'left' }}>
                 <p style={{ fontWeight: 'bold' }}>Line {selectedLineIndex + 1} is selected</p>
                 <p><span style={{ fontWeight: 'bold' }}>(X1, Y1):</span> {selectedLine.x1 / PIXEL_PER_INCH + ', ' + selectedLine.y1 / PIXEL_PER_INCH}</p>
@@ -601,6 +646,17 @@ function PolygonDrawer() {
                     onChange={(e) => handleLineLengthChange(selectedLineIndex, e.target.value)}
                   />
                 </p>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 'bold', marginRight: '20px' }}>Curvature: {selectedLine.bezierCurvature}</span>
+                  <input
+                    type="range"
+                    min={-50}
+                    max={50}
+                    value={selectedLine.bezierCurvature}
+                    onChange={(e) => handleBezierCurvatureChange(selectedLineIndex, parseInt(e.target.value))}
+                  />
+
+                </div>
                 <p>
                   <span style={{ fontWeight: 'bold' }}>Bevel: </span>
                   <input
