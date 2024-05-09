@@ -1,9 +1,11 @@
 import React, { useState, useRef } from 'react';
 import { saveAs } from 'file-saver';
 import { convertSvgToDxf, convertSvgToDwg } from '../utils/canvas';
+import { getShapePoints } from '../utils/shapes';
 
 function PolygonDrawer() {
   const svgRef = useRef(null);
+  const [activeShape, setActiveShape] = useState('freeDrawing');
   const [points, setPoints] = useState([]);
   const [lines, setLines] = useState([]);
   const [currentPoint, setCurrentPoint] = useState(null);
@@ -35,6 +37,17 @@ function PolygonDrawer() {
     return newLine;
   }
 
+  const drawReadyShape = (value) => {
+
+    const shapePoints = getShapePoints(value, PIXEL_PER_INCH)
+
+    // set points 
+    setPoints(shapePoints)
+    // draw lines
+    updateLinesAfterPointsUpdate(shapePoints)
+
+  }
+
   const getNewCoordinateOnLineLengthChange = (index, newLength) => {
 
     // newLength = 120
@@ -59,6 +72,7 @@ function PolygonDrawer() {
       const newLine = drawLineFromPoints(updatedPoints[i], updatedPoints[i + 1], i);
       updatedLines.push(newLine);
     }
+
     // Add line between last and first point for closed polygon
     if (isClosed && updatedPoints.length > 2) {
       const newLine = drawLineFromPoints(updatedPoints[updatedPoints.length - 1], updatedPoints[0], updatedPoints.length - 1);
@@ -68,6 +82,64 @@ function PolygonDrawer() {
     // update lines 
     setLines(updatedLines);
     setSelectedLine(lines[selectedLineIndex]);
+  }
+
+  const getSvgPosition = (event) => {
+    const svgRect = event.currentTarget.getBoundingClientRect();
+    const x = (event.clientX - svgRect.left) / zoomLevel;
+    const y = (event.clientY - svgRect.top) / zoomLevel;
+
+    return { x, y }
+  }
+
+  // Function to add an action to history
+  const addActionToHistory = (action) => {
+    let prevHistory = [...actionHistory]
+    prevHistory.push(action)
+    setActionHistory(prevHistory);
+  };
+
+  // New function to render the grid
+  const renderGrid = () => {
+    const gridLines = [];
+    const gridSpacing = 48; // 12 inches per grid unit, 2 pixels per inch
+
+    // Horizontal lines
+    for (let y = 0; y <= 720; y += gridSpacing) {
+      gridLines.push(
+        <line key={`horizontal-${y}`}
+          className='grid-line'
+          x1={0} y1={y} x2={960} y2={y}
+          stroke="#ddd"
+          strokeWidth={1}
+        />
+      );
+    }
+
+    // Vertical lines
+    for (let x = 0; x <= 960; x += gridSpacing) {
+      gridLines.push(
+        <line key={`vertical-${x}`}
+          className='grid-line'
+          x1={x} y1={0} x2={x} y2={720}
+          stroke="#ddd"
+          strokeWidth={1}
+        />
+      );
+    }
+
+    return gridLines;
+  };
+
+  const handleActiveShapeChange = (value) => {
+    handleClear()
+    setActiveShape(value)
+    if (value === 'freeDrawing') return;
+
+    setIsClosed(true)
+
+    //draw the shape
+    drawReadyShape(value)
   }
 
   const handleLineClick = (index) => {
@@ -276,61 +348,17 @@ function PolygonDrawer() {
   const handleClear = () => {
     setPoints([])
     setLines([])
+    setSelectedLineIndex(null)
+    setSelectedLine(null)
     setActionHistory([])
-    setIsClosed(null)
+    setIsClosed(false)
     setZoomLevel(.8)
+    setActiveShape('freeDrawing')
   }
 
   const handleResetZoom = () => {
     setZoomLevel(.8)
   }
-
-  const getSvgPosition = (event) => {
-    const svgRect = event.currentTarget.getBoundingClientRect();
-    const x = (event.clientX - svgRect.left) / zoomLevel;
-    const y = (event.clientY - svgRect.top) / zoomLevel;
-
-    return { x, y }
-  }
-
-  // Function to add an action to history
-  const addActionToHistory = (action) => {
-    let prevHistory = [...actionHistory]
-    prevHistory.push(action)
-    setActionHistory(prevHistory);
-  };
-
-  // New function to render the grid
-  const renderGrid = () => {
-    const gridLines = [];
-    const gridSpacing = 48; // 12 inches per grid unit, 2 pixels per inch
-
-    // Horizontal lines
-    for (let y = 0; y <= 720; y += gridSpacing) {
-      gridLines.push(
-        <line key={`horizontal-${y}`}
-          className='grid-line'
-          x1={0} y1={y} x2={960} y2={y}
-          stroke="#ddd"
-          strokeWidth={1}
-        />
-      );
-    }
-
-    // Vertical lines
-    for (let x = 0; x <= 960; x += gridSpacing) {
-      gridLines.push(
-        <line key={`vertical-${x}`}
-          className='grid-line'
-          x1={x} y1={0} x2={x} y2={720}
-          stroke="#ddd"
-          strokeWidth={1}
-        />
-      );
-    }
-
-    return gridLines;
-  };
 
   // render shapes and elements
   const renderPoints = () => {
@@ -555,7 +583,7 @@ function PolygonDrawer() {
         >
           <div>
             <h1>Line Metrics</h1>
-            {selectedLine && (
+            {selectedLineIndex && (
               <div style={{ textAlign: 'left' }}>
                 <p style={{ fontWeight: 'bold' }}>Line {selectedLineIndex + 1} is selected</p>
                 <p><span style={{ fontWeight: 'bold' }}>(X1, Y1):</span> {selectedLine.x1 / PIXEL_PER_INCH + ', ' + selectedLine.y1 / PIXEL_PER_INCH}</p>
@@ -618,6 +646,45 @@ function PolygonDrawer() {
               />
               <span>Zoom Scale: {zoomLevel}</span>
             </div>
+            <div>
+              <h4 style={{ marginBottom: '10px' }}>Active Shape: </h4>
+              <input
+                type="radio"
+                value="freeDrawing"
+                checked={activeShape === "freeDrawing"}
+                onChange={(e) => handleActiveShapeChange(e.target.value)}
+              />
+              <span style={{ marginRight: "10px" }}>Free Drawing</span>
+              <input
+                type="radio"
+                value="rectangle"
+                checked={activeShape === "rectangle"}
+                onChange={(e) => handleActiveShapeChange(e.target.value)}
+              />
+              <span style={{ marginRight: "10px" }}>Rectangle</span>
+              <input
+                type="radio"
+                value="ushape"
+                checked={activeShape === "ushape"}
+                onChange={(e) => handleActiveShapeChange(e.target.value)}
+              />
+              <span style={{ marginRight: "10px" }}>U-Shape</span>
+              <input
+                type="radio"
+                value="lshape"
+                checked={activeShape === "lshape"}
+                onChange={(e) => handleActiveShapeChange(e.target.value)}
+              />
+              <span style={{ marginRight: "10px" }}>L-Shape</span>
+              <input
+                type="radio"
+                value="jshape"
+                checked={activeShape === "jshape"}
+                onChange={(e) => handleActiveShapeChange(e.target.value)}
+              />
+              <span>J-Shape</span>
+            </div>
+
           </div>
           {/* button for export  */}
           <div>
