@@ -68,7 +68,7 @@ export const convertSvgToDxf = (svgContent) => {
   const model = {};
   const inchPerPixel = 4;
   let li = 0;
-  // let bi = 0;
+  let pi = 0;
 
   // // Extract lines
   const lines = svgContent.match(/<line(?!.*\bclass\s*=\s*["']?\bgrid-line\b).*?<\/line>/g);
@@ -101,6 +101,40 @@ export const convertSvgToDxf = (svgContent) => {
 
     // add to model
     makerjs.model.addPath(model, newLine, "line")
+  });
+
+  const paths = svgContent.match(/<path(?!.*\bclass\s*=\s*["']?\bpolygon\b).*?<\/path>/g);
+
+  paths.forEach((path, index) => {
+    const d = path.match(/<path.*?\bd\s*=\s*"([^"]+)"/)[1];
+    const match = d.match(/M\s*(\d+)\s+(\d+)\s*Q\s*([\d.]+)\s+([\d.]+),\s*(\d+)\s+(\d+)/);
+
+    const point1 = [parseInt(match[1]) / inchPerPixel, parseInt(match[2] / inchPerPixel)];
+    const controlPoint = [parseInt(match[3]) / inchPerPixel, parseInt(match[4]) / inchPerPixel];
+    const point2 = [parseInt(match[5]) / inchPerPixel, parseInt(match[6]) / inchPerPixel];
+    const points = [point1, controlPoint, point2];
+
+    const newpath = new makerjs.models.BezierCurve(points, 37);
+
+    const classMatch = path.match(/class="([^"]+)"/);
+    const className = classMatch ? classMatch[1] : '';
+
+    // add layer
+    if (className === 'bevel') {
+      // bi++;
+      const strokeMatch = path.match(/stroke="([^"]+)"/);
+      const stroke = strokeMatch ? strokeMatch[1] : 'black';
+      // newLine.layer = 'bevel-' + bi;
+      newpath.layer = stroke;
+    }
+    else {
+      pi++;
+      newpath.layer = 'path-' + pi
+    }
+
+    // add to model
+    makerjs.model.addModel(model, newpath, "bezier-seed")
+
   });
 
   return makerjs.exporter.toDXF(model);

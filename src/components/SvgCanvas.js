@@ -446,7 +446,6 @@ function PolygonDrawer() {
         );
       }
 
-
       // draw bevel 
       const bevel = renderBevel(line, i)
       if (bevel) {
@@ -488,41 +487,41 @@ function PolygonDrawer() {
     const perpendicularY = dx / length * 4; // 4 pixels offset
     let bevel = null;
     let stroke = ''
-    if (line.bevel !== null) {
+    if (line.bevel !== 'none') {
       stroke = line.bevel
-    }
 
-    // Draw shadow line for bevel
-    if (line.bezierCurvature === 0) {
-      bevel = <line
-        key={`line-shadow-${stroke}-${index}`}
-        className='bevel'
-        x1={line.x1 - perpendicularX}
-        y1={line.y1 - perpendicularY}
-        x2={line.x2 - perpendicularX}
-        y2={line.y2 - perpendicularY}
-        stroke={stroke}
-        strokeWidth={6}
-      />
-    } else {
-      const controlPoint = getBezierControlPoint(
-        line.x1 - perpendicularX,
-        line.y1 - perpendicularY,
-        line.x2 - perpendicularX,
-        line.y2 - perpendicularY,
-        line.bezierCurvature
-      )
+      // Draw shadow line for bevel
+      if (line.bezierCurvature === 0) {
+        bevel = <line
+          key={`line-shadow-${stroke}-${index}`}
+          className='bevel'
+          x1={line.x1 - perpendicularX}
+          y1={line.y1 - perpendicularY}
+          x2={line.x2 - perpendicularX}
+          y2={line.y2 - perpendicularY}
+          stroke={stroke}
+          strokeWidth={6}
+        />
+      } else {
+        const controlPoint = getBezierControlPoint(
+          line.x1 - perpendicularX,
+          line.y1 - perpendicularY,
+          line.x2 - perpendicularX,
+          line.y2 - perpendicularY,
+          line.bezierCurvature
+        )
 
-      bevel = <path
-        key={`path-shadow-${stroke}-${index}`}
-        className='bevel'
-        d={`M ${line.x1 - perpendicularX} ${line.y1 - perpendicularY}
+        bevel = <path
+          key={`path-shadow-${stroke}-${index}`}
+          className='bevel'
+          d={`M ${line.x1 - perpendicularX} ${line.y1 - perpendicularY}
             Q ${controlPoint.x} ${controlPoint.y},
             ${line.x2 - perpendicularX} ${line.y2 - perpendicularY}`}
-        fill={"transparent"}
-        stroke={stroke}
-        strokeWidth={6}
-      />
+          fill={"transparent"}
+          stroke={stroke}
+          strokeWidth={6}
+        />
+      }
     }
 
     return bevel;
@@ -587,7 +586,7 @@ function PolygonDrawer() {
     pathString += ' Z';
 
     // Return the path element
-    return <path d={pathString} fill="#00D2FF" />;
+    return <path className='polygon' d={pathString} fill="#00D2FF" />;
   };
 
   return (
