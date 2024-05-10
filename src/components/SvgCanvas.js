@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { saveAs } from 'file-saver';
 import { convertSvgToDxf, convertSvgToDwg, getBezierControlPoint } from '../utils/canvas';
 import { getShapePoints } from '../utils/shapes';
@@ -19,6 +19,48 @@ function PolygonDrawer() {
   const [actionHistory, setActionHistory] = useState([]);
 
   const PIXEL_PER_INCH = 4
+
+
+
+  useEffect(() => {
+    const drawLineFromPoints = (point1, point2, index) => {
+      if (!point1 || !point2) return null;
+
+      const line = lines[index]
+
+      const newLine = {
+        x1: Math.round(point1.x),
+        y1: Math.round(point1.y),
+        x2: Math.round(point2.x),
+        y2: Math.round(point2.y),
+        length: Math.round(Math.sqrt((point2.x - point1.x) ** 2 + (point2.y - point1.y) ** 2)),
+        bevel: line ? line.bevel : 'none',
+        bezierCurvature: line ? line.bezierCurvature : 0,
+      };
+
+      return newLine;
+    }
+
+    const updateSelectedLine = (newIndex) => {
+      const newSelectedLine = lines[newIndex];
+      if (newIndex) {
+        setSelectedLine(newSelectedLine);
+      }
+      else {
+        setSelectedLine(null);
+      }
+    };
+
+    updateSelectedLine(selectedLineIndex)
+
+    if (isClosed && points.length !== lines.length) {
+      const updatedLines = [...lines]
+      const newLine = drawLineFromPoints(points[points.length - 1], points[0], points.length - 1);
+      updatedLines.push(newLine);
+      setLines(updatedLines)
+    }
+
+  }, [isClosed, lines, points, selectedLineIndex]);
 
   const drawLineFromPoints = (point1, point2, index) => {
     if (!point1 || !point2) return null;
@@ -133,6 +175,11 @@ function PolygonDrawer() {
   };
 
   const handleActiveShapeChange = (value) => {
+    // const confirmed = window.confirm("Are you sure you want to clear and change the active shape?");
+    // if (!confirmed) {
+    //   return; // Do nothing if not confirmed
+    // }
+
     handleClear()
     setActiveShape(value)
     if (value === 'freeDrawing') return;
@@ -281,7 +328,6 @@ function PolygonDrawer() {
 
   // Update the handleBezierCurvatureChange function
   const handleBezierCurvatureChange = (index, value) => {
-    console.log(value);
     const updatedLines = [...lines];
     updatedLines[index].bezierCurvature = value;
     setLines(updatedLines);
@@ -355,12 +401,11 @@ function PolygonDrawer() {
   };
 
   const handleClear = () => {
+    setIsClosed(false)
     setPoints([])
     setLines([])
     setSelectedLineIndex(null)
-    setSelectedLine(null)
     setActionHistory([])
-    setIsClosed(false)
     setZoomLevel(.8)
     setActiveShape('freeDrawing')
   }
