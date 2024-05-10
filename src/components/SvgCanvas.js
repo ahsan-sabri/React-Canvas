@@ -23,27 +23,11 @@ function PolygonDrawer() {
 
 
   useEffect(() => {
-    const drawLineFromPoints = (point1, point2, index) => {
-      if (!point1 || !point2) return null;
 
-      const line = lines[index]
-
-      const newLine = {
-        x1: Math.round(point1.x),
-        y1: Math.round(point1.y),
-        x2: Math.round(point2.x),
-        y2: Math.round(point2.y),
-        length: Math.round(Math.sqrt((point2.x - point1.x) ** 2 + (point2.y - point1.y) ** 2)),
-        bevel: line ? line.bevel : 'none',
-        bezierCurvature: line ? line.bezierCurvature : 0,
-      };
-
-      return newLine;
-    }
-
+    // update selected lline on change line index
     const updateSelectedLine = (newIndex) => {
       const newSelectedLine = lines[newIndex];
-      if (newIndex) {
+      if (newSelectedLine) {
         setSelectedLine(newSelectedLine);
       }
       else {
@@ -53,6 +37,7 @@ function PolygonDrawer() {
 
     updateSelectedLine(selectedLineIndex)
 
+    // if points and lines are not same then draw the closing line
     if (isClosed && points.length !== lines.length) {
       const updatedLines = [...lines]
       const newLine = drawLineFromPoints(points[points.length - 1], points[0], points.length - 1);
@@ -60,6 +45,11 @@ function PolygonDrawer() {
       setLines(updatedLines)
     }
 
+    if (activeShape && activeShape !== 'freeDrawing') {
+      //
+    }
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isClosed, lines, points, selectedLineIndex]);
 
   const drawLineFromPoints = (point1, point2, index) => {
@@ -74,7 +64,7 @@ function PolygonDrawer() {
       y2: Math.round(point2.y),
       length: Math.round(Math.sqrt((point2.x - point1.x) ** 2 + (point2.y - point1.y) ** 2)),
       bevel: line ? line.bevel : 'none',
-      bezierCurvature: line ? line.bezierCurvature : 0,
+      bezierCurvature: isClosed && line ? line.bezierCurvature : 0,
     };
 
     return newLine;
@@ -88,7 +78,6 @@ function PolygonDrawer() {
     setPoints(shapePoints)
     // draw lines
     updateLinesAfterPointsUpdate(shapePoints)
-
   }
 
   const getNewCoordinateOnLineLengthChange = (index, newLength) => {
@@ -185,17 +174,12 @@ function PolygonDrawer() {
     if (value === 'freeDrawing') return;
 
     setIsClosed(true)
-
     //draw the shape
     drawReadyShape(value)
   }
 
   const handleLineClick = (index) => {
     setSelectedLineIndex(index);
-
-    // Set selected line details
-    const selectedLine = lines[index];
-    setSelectedLine(selectedLine);
   };
 
   const handlePointClick = (event) => {
@@ -503,28 +487,40 @@ function PolygonDrawer() {
     const perpendicularX = -dy / length * 4; // 4 pixels offset
     const perpendicularY = dx / length * 4; // 4 pixels offset
     let bevel = null;
+    let stroke = ''
+    if (line.bevel !== null) {
+      stroke = line.bevel
+    }
 
     // Draw shadow line for bevel
-    if (line.bevel === 'yellow') {
+    if (line.bezierCurvature === 0) {
       bevel = <line
-        key={`line-shadow-yellow-${index}`}
+        key={`line-shadow-${stroke}-${index}`}
         className='bevel'
         x1={line.x1 - perpendicularX}
         y1={line.y1 - perpendicularY}
         x2={line.x2 - perpendicularX}
         y2={line.y2 - perpendicularY}
-        stroke={'yellow'}
+        stroke={stroke}
         strokeWidth={6}
       />
-    } else if (line.bevel === 'black') {
-      bevel = <line
-        key={`line-shadow-black-${index}`}
+    } else {
+      const controlPoint = getBezierControlPoint(
+        line.x1 - perpendicularX,
+        line.y1 - perpendicularY,
+        line.x2 - perpendicularX,
+        line.y2 - perpendicularY,
+        line.bezierCurvature
+      )
+
+      bevel = <path
+        key={`path-shadow-${stroke}-${index}`}
         className='bevel'
-        x1={line.x1 - perpendicularX}
-        y1={line.y1 - perpendicularY}
-        x2={line.x2 - perpendicularX}
-        y2={line.y2 - perpendicularY}
-        stroke={'gray'}
+        d={`M ${line.x1 - perpendicularX} ${line.y1 - perpendicularY}
+            Q ${controlPoint.x} ${controlPoint.y},
+            ${line.x2 - perpendicularX} ${line.y2 - perpendicularY}`}
+        fill={"transparent"}
+        stroke={stroke}
         strokeWidth={6}
       />
     }
@@ -565,13 +561,19 @@ function PolygonDrawer() {
     if (points.length < 3 || !isClosed) return null;
 
     let pathString = `M ${points[0].x} ${points[0].y}`;
-    for (let i = 1; i < points.length; i++) {
-      const currentPoint = points[i];
+    for (let i = 1; i <= points.length; i++) {
       const previousPoint = points[i - 1];
+      let currentPoint = points[i];
+      let line = lines[i - 1];
 
-      if (lines[i - 1].bezierCurvature !== 0) {
+      if (i === points.length) {
+        currentPoint = points[0]
+        line = lines[i - 1]
+      }
+
+      if (line && line.bezierCurvature !== 0) {
         // Calculate control points for Bezier curve
-        const controlPoint = getBezierControlPoint(previousPoint.x, previousPoint.y, currentPoint.x, currentPoint.y, lines[i - 1].bezierCurvature);
+        const controlPoint = getBezierControlPoint(previousPoint.x, previousPoint.y, currentPoint.x, currentPoint.y, line.bezierCurvature);
 
         // Append Bezier curve to path string
         pathString += ` Q ${controlPoint.x},${controlPoint.y}, ${currentPoint.x},${currentPoint.y}`;
@@ -672,7 +674,7 @@ function PolygonDrawer() {
           style={{ border: '4px solid #D7DC3C', background: '#fff', padding: '30px', marginLeft: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', textAlign: 'left' }}
         >
           <div>
-            <h1>Line Metrics</h1>
+            <h2>Line Metrics</h2>
             {selectedLine && (
               <div style={{ textAlign: 'left' }}>
                 <p style={{ fontWeight: 'bold' }}>Line {selectedLineIndex + 1} is selected</p>
@@ -735,7 +737,7 @@ function PolygonDrawer() {
             }
           </div>
           <div>
-            <h1>Drawing Board Setting</h1>
+            <h3>Drawing Board Setting</h3>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <input
                 type="range"
@@ -789,12 +791,12 @@ function PolygonDrawer() {
           </div>
           {/* button for export  */}
           <div>
-            <h1 >Action</h1>
+            <h3 >Action</h3>
             <button onClick={handleResetZoom} style={{ marginRight: '20px' }}>Reset Zoom</button>
             <button onClick={handleUndo} style={{ marginRight: '20px' }}>Undo</button>
             <button onClick={handleClear}>Clear</button>
 
-            <h1 >Export</h1>
+            <h3 >Export</h3>
             <button style={{ marginRight: '20px' }} onClick={handleExportDxf}>Export as DXF</button>
             <button onClick={handleExportDwg}>Export as DWG</button>
           </div>
