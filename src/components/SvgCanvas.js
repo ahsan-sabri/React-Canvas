@@ -483,8 +483,8 @@ function PolygonDrawer() {
     const dx = line.x2 - line.x1;
     const dy = line.y2 - line.y1;
     const length = Math.sqrt(dx * dx + dy * dy);
-    const perpendicularX = -dy / length * 4; // 4 pixels offset
-    const perpendicularY = dx / length * 4; // 4 pixels offset
+    const perpendicularX = (-dy / length * 4).toFixed(2); // 4 pixels offset
+    const perpendicularY = (dx / length * 4).toFixed(2); // 4 pixels offset
     let bevel = null;
     let stroke = ''
     if (line.bevel !== 'none') {
@@ -514,9 +514,7 @@ function PolygonDrawer() {
         bevel = <path
           key={`path-shadow-${stroke}-${index}`}
           className='bevel'
-          d={`M ${line.x1 - perpendicularX} ${line.y1 - perpendicularY}
-            Q ${controlPoint.x} ${controlPoint.y},
-            ${line.x2 - perpendicularX} ${line.y2 - perpendicularY}`}
+          d={`M ${line.x1 - perpendicularX} ${line.y1 - perpendicularY} Q ${controlPoint.x} ${controlPoint.y}, ${line.x2 - perpendicularX} ${line.y2 - perpendicularY}`}
           fill={"transparent"}
           stroke={stroke}
           strokeWidth={6}

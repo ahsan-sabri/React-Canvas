@@ -28,7 +28,7 @@ export const getBezierControlPoint = (x1, y1, x2, y2, curvature) => {
   const controlX = midX + distance * Math.cos(angle + Math.PI / 2);
   const controlY = midY + distance * Math.sin(angle + Math.PI / 2);
 
-  return { x: controlX, y: controlY };
+  return { x: controlX.toFixed(2), y: controlY.toFixed(2) };
 }
 
 
@@ -69,73 +69,82 @@ export const convertSvgToDxf = (svgContent) => {
   const inchPerPixel = 4;
   let li = 0;
   let pi = 0;
+  let bi = 0;
 
   // // Extract lines
   const lines = svgContent.match(/<line(?!.*\bclass\s*=\s*["']?\bgrid-line\b).*?<\/line>/g);
 
-  lines.forEach((line, index) => {
-    const x1 = parseFloat(line.match(/x1="([\d.]+)"/)[1] / inchPerPixel);
-    const y1 = parseFloat(line.match(/y1="([\d.]+)"/)[1] / inchPerPixel);
-    const x2 = parseFloat(line.match(/x2="([\d.]+)"/)[1] / inchPerPixel);
-    const y2 = parseFloat(line.match(/y2="([\d.]+)"/)[1] / inchPerPixel);
-    const point1 = [x1, -y1];
-    const point2 = [x2, -y2];
+  if (lines) {
+    lines.forEach((line, index) => {
+      const x1 = parseFloat(line.match(/x1="([\d.]+)"/)[1] / inchPerPixel);
+      const y1 = parseFloat(line.match(/y1="([\d.]+)"/)[1] / inchPerPixel);
+      const x2 = parseFloat(line.match(/x2="([\d.]+)"/)[1] / inchPerPixel);
+      const y2 = parseFloat(line.match(/y2="([\d.]+)"/)[1] / inchPerPixel);
+      const point1 = [x1, -y1];
+      const point2 = [x2, -y2];
 
-    const newLine = new makerjs.paths.Line(point1, point2);
+      const newLine = new makerjs.paths.Line(point1, point2);
 
-    const classMatch = line.match(/class="([^"]+)"/);
-    const className = classMatch ? classMatch[1] : '';
+      const classMatch = line.match(/class="([^"]+)"/);
+      const className = classMatch ? classMatch[1] : '';
 
-    // add layer
-    if (className === 'bevel') {
-      // bi++;
-      const strokeMatch = line.match(/stroke="([^"]+)"/);
-      const stroke = strokeMatch ? strokeMatch[1] : 'black';
-      // newLine.layer = 'bevel-' + bi;
-      newLine.layer = stroke;
-    }
-    else {
-      li++;
-      newLine.layer = 'line-' + li
-    }
+      // add layer
+      if (className === 'bevel') {
+        bi++;
+        const strokeMatch = line.match(/stroke="([^"]+)"/);
+        const stroke = strokeMatch ? strokeMatch[1] : 'black';
+        // newLine.layer = stroke;
+        newLine.layer = stroke + '-bevel-' + bi;
+      }
+      else {
+        li++;
+        newLine.layer = 'line-' + li
+      }
 
-    // add to model
-    makerjs.model.addPath(model, newLine, "line")
-  });
+      // add to model
+      makerjs.model.addPath(model, newLine, "line")
+    });
+  }
 
   const paths = svgContent.match(/<path(?!.*\bclass\s*=\s*["']?\bpolygon\b).*?<\/path>/g);
 
-  paths.forEach((path, index) => {
-    const d = path.match(/<path.*?\bd\s*=\s*"([^"]+)"/)[1];
-    const match = d.match(/M\s*(\d+)\s+(\d+)\s*Q\s*([\d.]+)\s+([\d.]+),\s*(\d+)\s+(\d+)/);
+  if (paths) {
+    paths.forEach((path, index) => {
+      const d = path.match(/<path.*?\bd\s*=\s*"([^"]+)"/)[1];
+      const match = d.match(/M\s*([\d.]+)\s+([\d.]+)\s*Q\s*([\d.]+)\s+([\d.]+)\s*,\s*([\d.]+)\s+([\d.]+)/);
 
-    const point1 = [parseInt(match[1]) / inchPerPixel, parseInt(match[2] / inchPerPixel)];
-    const controlPoint = [parseInt(match[3]) / inchPerPixel, parseInt(match[4]) / inchPerPixel];
-    const point2 = [parseInt(match[5]) / inchPerPixel, parseInt(match[6]) / inchPerPixel];
-    const points = [point1, controlPoint, point2];
+      if (!match) {
+        return
+      }
 
-    const newpath = new makerjs.models.BezierCurve(points, 37);
+      const point1 = [parseFloat(match[1]) / inchPerPixel, - parseFloat(match[2] / inchPerPixel)];
+      const controlPoint = [parseFloat(match[3]) / inchPerPixel, - parseFloat(match[4]) / inchPerPixel];
+      const point2 = [parseFloat(match[5]) / inchPerPixel, - parseFloat(match[6]) / inchPerPixel];
+      const points = [point1, controlPoint, point2];
 
-    const classMatch = path.match(/class="([^"]+)"/);
-    const className = classMatch ? classMatch[1] : '';
+      const newPath = new makerjs.models.BezierCurve(points, .01);
 
-    // add layer
-    if (className === 'bevel') {
-      // bi++;
-      const strokeMatch = path.match(/stroke="([^"]+)"/);
-      const stroke = strokeMatch ? strokeMatch[1] : 'black';
-      // newLine.layer = 'bevel-' + bi;
-      newpath.layer = stroke;
-    }
-    else {
-      pi++;
-      newpath.layer = 'path-' + pi
-    }
+      const classMatch = path.match(/class="([^"]+)"/);
+      const className = classMatch ? classMatch[1] : '';
 
-    // add to model
-    makerjs.model.addModel(model, newpath, "bezier-seed")
+      // add layer
+      if (className === 'bevel') {
+        bi++;
+        const strokeMatch = path.match(/stroke="([^"]+)"/);
+        const stroke = strokeMatch ? strokeMatch[1] : 'black';
+        // newPath.layer = stroke;
+        newPath.layer = stroke + '-bevel-' + bi;
+      }
+      else {
+        pi++;
+        newPath.layer = 'path-' + pi
+      }
 
-  });
+      // add to model
+      makerjs.model.addModel(model, newPath, "bezier-seed")
+
+    });
+  }
 
   return makerjs.exporter.toDXF(model);
 }
