@@ -6,22 +6,25 @@ import { getShapePoints } from '../utils/shapes';
 function PolygonDrawer() {
   const svgRef = useRef(null);
   const [activeShape, setActiveShape] = useState('freeDrawing');
+  const [activeTool, setActiveTool] = useState(null);
   const [magneticSnap, setMagneticSnap] = useState(true);
   const [points, setPoints] = useState([]);
+  const [cutoutPoints, setCutoutPoints] = useState([]);
   const [lines, setLines] = useState([]);
+  const [cutoutLines, setCutoutLines] = useState([]);
   const [currentPoint, setCurrentPoint] = useState(null);
   const [selectedLineIndex, setSelectedLineIndex] = useState(null);
   const [selectedLine, setSelectedLine] = useState(null);
   const [dragPoint, setDragPoint] = useState(null);
   const [isDragged, setIsDragged] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
+  const [isCutoutClosed, setIsCutoutClosed] = useState(false);
   const [hoverFirstPoint, setHoverFirstPoint] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(.8);
   const [actionHistory, setActionHistory] = useState([]);
 
-  const PIXEL_PER_INCH = 4
-
-
+  const PIXEL_PER_INCH = 4 // 4 inch per pixel
+  const GRID_SPACING = 12 * PIXEL_PER_INCH; // 12 inch per grid
 
   useEffect(() => {
 
@@ -56,7 +59,7 @@ function PolygonDrawer() {
   const drawLineFromPoints = (point1, point2, index) => {
     if (!point1 || !point2) return null;
 
-    const line = lines[index]
+    const line = !activeTool ? lines[index] : cutoutLines[index]
 
     const newLine = {
       x1: Math.round(point1.x),
@@ -123,8 +126,8 @@ function PolygonDrawer() {
     let y = (event.clientY - svgRect.top) / zoomLevel;
 
     if (magneticSnap) {
-      const nearestX = Math.round(x / 48) * 48;
-      const nearestY = Math.round(y / 48) * 48;
+      const nearestX = Math.round(x / GRID_SPACING) * GRID_SPACING;
+      const nearestY = Math.round(y / GRID_SPACING) * GRID_SPACING;
 
       return { x: nearestX, y: nearestY }
     }
@@ -142,10 +145,9 @@ function PolygonDrawer() {
   // New function to render the grid
   const renderGrid = () => {
     const gridLines = [];
-    const gridSpacing = 48; // 12 inches per grid unit, 2 pixels per inch
 
     // Horizontal lines
-    for (let y = 0; y <= 720; y += gridSpacing) {
+    for (let y = 0; y <= 720; y += GRID_SPACING) {
       gridLines.push(
         <line key={`horizontal-${y}`}
           className='grid-line'
@@ -157,7 +159,7 @@ function PolygonDrawer() {
     }
 
     // Vertical lines
-    for (let x = 0; x <= 960; x += gridSpacing) {
+    for (let x = 0; x <= 960; x += GRID_SPACING) {
       gridLines.push(
         <line key={`vertical-${x}`}
           className='grid-line'
@@ -186,19 +188,65 @@ function PolygonDrawer() {
     drawReadyShape(value)
   }
 
+  const handleActiveTool = (value) => {
+    setActiveTool(value);
+  };
+
   const handleMagneticSnapChange = (value) => {
     setMagneticSnap(value);
   };
 
   const handleLineClick = (index) => {
+    if (activeTool) {
+      return
+    }
     setSelectedLineIndex(index);
   };
 
   const handlePointClick = (event) => {
+    const svgPos = getSvgPosition(event);
+    const newPoint = svgPos;
+
     if (isClosed) {
       if (event.target.tagName === 'svg') {
         setSelectedLineIndex(null)
         setSelectedLine(null)
+      }
+
+      if (activeTool) {
+        const el = event.target;
+        if (el.tagName === 'path' && el.classList.contains('polygon')) {
+
+          if (isCutoutClosed) return
+
+          if (hoverFirstPoint) {
+            if (cutoutPoints.length <= 2) {
+              return;
+            }
+            const newPoint = cutoutPoints[0]
+            const newline = drawLineFromPoints(cutoutPoints[cutoutPoints.length - 1], newPoint, cutoutPoints.length - 1)
+
+            if (newline) {
+              setCutoutLines([...cutoutLines, newline]);
+            }
+            setIsCutoutClosed(true);
+            // addActionToHistory({ type: 'closePolygon' })
+            return;
+          }
+
+          // set new point 
+          setCutoutPoints([...cutoutPoints, newPoint]);
+          // addActionToHistory({ type: 'addPoint', point: newPoint })
+          setCurrentPoint(null);
+
+          //draw line
+          const newline = drawLineFromPoints(cutoutPoints[cutoutPoints.length - 1], newPoint, cutoutPoints.length - 1)
+          if (newline) {
+            setCutoutLines([...cutoutLines, newline]);
+          }
+
+
+        }
       }
 
       return;
@@ -220,8 +268,8 @@ function PolygonDrawer() {
     }
 
     // set new point 
-    const svgPos = getSvgPosition(event);
-    const newPoint = svgPos;
+    // const svgPos = getSvgPosition(event);
+    // const newPoint = svgPos;
 
     setPoints([...points, newPoint]);
     addActionToHistory({ type: 'addPoint', point: newPoint })
@@ -247,6 +295,16 @@ function PolygonDrawer() {
 
         // lines should be updated after updating points 
         updateLinesAfterPointsUpdate(updatedPoints);
+      }
+
+      if (activeTool) {
+        if (isCutoutClosed) {
+          return
+        }
+        setCurrentPoint(svgPos);
+
+        const withinRadius = cutoutPoints.length > 0 && Math.abs(cutoutPoints[0].x - svgPos.x) < 15 && Math.abs(cutoutPoints[0].y - svgPos.y) < 15;
+        setHoverFirstPoint(withinRadius);
       }
       return
     }
@@ -398,8 +456,12 @@ function PolygonDrawer() {
 
   const handleClear = () => {
     setIsClosed(false)
+    setIsCutoutClosed(false)
+    setActiveTool(null)
     setPoints([])
+    setCutoutPoints([])
     setLines([])
+    setCutoutLines([])
     setSelectedLineIndex(null)
     setActionHistory([])
     setZoomLevel(.8)
@@ -433,6 +495,19 @@ function PolygonDrawer() {
         fill="#bed929"
         cursor={"move"}
         onMouseDown={() => handlePointDrag(index, point)}
+      />
+    ));
+  };
+
+  const renderCutoutPoints = () => {
+    return cutoutPoints.map((point, index) => (
+      <circle key={`cutout-point-${index}`}
+        cx={point.x}
+        cy={point.y}
+        r={index === 0 && hoverFirstPoint && !isCutoutClosed ? 15 : 10}
+        fill="#bed929"
+        cursor={"move"}
+      // onMouseDown={() => handlePointDrag(index, point)}
       />
     ));
   };
@@ -488,6 +563,68 @@ function PolygonDrawer() {
 
       rlines.push(
         <line key={points.length}
+          x1={lastPoint.x} y1={lastPoint.y} x2={currentPoint.x} y2={currentPoint.y}
+          stroke={'black'}
+          strokeWidth={4}
+        />
+      );
+
+      // Calculate text position
+      const length = Math.round(Math.sqrt((currentPoint.x - lastPoint.x) ** 2 + (currentPoint.y - lastPoint.y) ** 2))
+      const text = renderMarkerText(lastPoint.x, lastPoint.y, currentPoint.x, currentPoint.y, length, points.length)
+      rlines.push(text);
+    }
+
+    return rlines;
+  };
+
+
+  const renderCutoutLines = () => {
+    const rlines = [];
+
+    // Draw lines between consecutive points
+    for (let i = 0; i < cutoutLines.length; i++) {
+      const line = cutoutLines[i];
+      // const isSelected = selectedLineIndex === i;
+
+      // Draw main line
+      if (line.bezierCurvature === 0) {
+        rlines.push(
+          <line key={`cutout-line-${i}`}
+            x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
+            stroke={'black'}
+            strokeWidth={4}
+            cursor={"pointer"}
+          // onClick={() => handleLineClick(i)}
+          />
+        );
+      }
+      // else {
+      //   const controlPoint = getBezierControlPoint(line.x1, line.y1, line.x2, line.y2, line.bezierCurvature)
+      //   rlines.push(
+      //     <path key={`line-${i}`}
+      //       d={`M ${line.x1} ${line.y1} Q ${controlPoint.x} ${controlPoint.y}, ${line.x2} ${line.y2}`}
+      //       stroke={isSelected ? '#ff0000' : 'black'}
+      //       fill={"transparent"}
+      //       strokeWidth={isSelected ? 6 : 4}
+      //       cursor={"pointer"}
+      //       onClick={() => handleLineClick(i)}
+      //     />
+      //   );
+      // }
+
+
+      // Draw text
+      const text = renderMarkerText(line.x1, line.y1, line.x2, line.y2, line.length, i)
+      rlines.push(text);
+    }
+
+    // Draw line between last point and current point if not closed
+    if (currentPoint !== null && cutoutPoints.length > 0 && isClosed) {
+      const lastPoint = cutoutPoints[cutoutPoints.length - 1];
+
+      rlines.push(
+        <line key={cutoutPoints.length}
           x1={lastPoint.x} y1={lastPoint.y} x2={currentPoint.x} y2={currentPoint.y}
           stroke={'black'}
           strokeWidth={4}
@@ -609,7 +746,43 @@ function PolygonDrawer() {
     pathString += ' Z';
 
     // Return the path element
-    return <path className='polygon' d={pathString} fill="#00D2FF" />;
+    return <path className='polygon' d={pathString} fill={cutoutPoints.length > 0 ? 'rgba(0, 210, 255, .5)' : '#00D2FF'} />;
+  };
+
+  const renderCutoutPolygon = () => {
+    const cpoints = [...cutoutPoints]
+    // cpoints.reverse()
+    // console.log(cpoints);
+    if (cpoints.length < 3 || !isCutoutClosed) return null;
+
+    let pathString = `M ${cpoints[0].x} ${cpoints[0].y}`;
+    for (let i = 1; i <= cpoints.length; i++) {
+      const previousPoint = cpoints[i - 1];
+      let currentPoint = cpoints[i];
+      let line = cutoutLines[i - 1];
+
+      if (i === cpoints.length) {
+        currentPoint = cpoints[0]
+        line = cutoutLines[i - 1]
+      }
+
+      if (line && line.bezierCurvature !== 0) {
+        // Calculate control points for Bezier curve
+        const controlPoint = getBezierControlPoint(previousPoint.x, previousPoint.y, currentPoint.x, currentPoint.y, line.bezierCurvature);
+
+        // Append Bezier curve to path string
+        pathString += ` Q ${controlPoint.x},${controlPoint.y}, ${currentPoint.x},${currentPoint.y}`;
+      } else {
+        // Append line to path string
+        pathString += ` L ${currentPoint.x},${currentPoint.y}`;
+      }
+    }
+
+    // Close the path
+    pathString += ' Z';
+
+    // Return the path element
+    return <path className='polygon' d={pathString} fill="rgba(255, 255, 255, .4)" />;
   };
 
   return (
@@ -677,6 +850,10 @@ function PolygonDrawer() {
             {renderPolygon()}
             {renderLines()}
             {renderPoints()}
+            {renderCutoutPolygon()}
+            {renderCutoutLines()}
+            {renderCutoutPoints()}
+
             {renderCurrentPoint()}
             {hoverFirstPoint && !isClosed && (
               <circle
@@ -817,6 +994,42 @@ function PolygonDrawer() {
                 onChange={(e) => handleActiveShapeChange(e.target.value)}
               />
               <span>J-Shape</span>
+            </div>
+            <div>
+              <h4 style={{ marginBottom: '10px' }}>Tools: </h4>
+              <input
+                type="radio"
+                value="cutout"
+                checked={activeTool === 'cutout'}
+                disabled={!isClosed}
+                onChange={(e) => handleActiveTool(e.target.value)}
+              />
+              <span style={{ marginRight: "10px" }}>Cutout</span>
+              <input
+                type="radio"
+                value="measure"
+                checked={activeTool === 'measure'}
+                disabled={!isClosed}
+                onChange={(e) => handleActiveTool(e.target.value)}
+              />
+              <span style={{ marginRight: "10px" }}>Tape Measure</span>
+              <input
+                type="radio"
+                value="seam"
+                checked={activeTool === 'seam'}
+                disabled={!isClosed}
+                onChange={(e) => handleActiveTool(e.target.value)}
+              />
+              <span style={{ marginRight: "10px" }}>Seam</span>
+              <input
+                type="radio"
+                value="cable"
+                checked={activeTool === 'cable'}
+                disabled={!isClosed}
+                onChange={(e) => handleActiveTool(e.target.value)}
+              />
+              <span style={{ marginRight: "10px" }}>Cable Cover</span>
+
             </div>
 
           </div>
