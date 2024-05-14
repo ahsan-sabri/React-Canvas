@@ -6,6 +6,7 @@ import { getShapePoints } from '../utils/shapes';
 function PolygonDrawer() {
   const svgRef = useRef(null);
   const [activeShape, setActiveShape] = useState('freeDrawing');
+  const [magneticSnap, setMagneticSnap] = useState(true);
   const [points, setPoints] = useState([]);
   const [lines, setLines] = useState([]);
   const [currentPoint, setCurrentPoint] = useState(null);
@@ -118,8 +119,15 @@ function PolygonDrawer() {
 
   const getSvgPosition = (event) => {
     const svgRect = event.currentTarget.getBoundingClientRect();
-    const x = (event.clientX - svgRect.left) / zoomLevel;
-    const y = (event.clientY - svgRect.top) / zoomLevel;
+    let x = (event.clientX - svgRect.left) / zoomLevel;
+    let y = (event.clientY - svgRect.top) / zoomLevel;
+
+    if (magneticSnap) {
+      const nearestX = Math.round(x / 48) * 48;
+      const nearestY = Math.round(y / 48) * 48;
+
+      return { x: nearestX, y: nearestY }
+    }
 
     return { x, y }
   }
@@ -177,6 +185,10 @@ function PolygonDrawer() {
     //draw the shape
     drawReadyShape(value)
   }
+
+  const handleMagneticSnapChange = (value) => {
+    setMagneticSnap(value);
+  };
 
   const handleLineClick = (index) => {
     setSelectedLineIndex(index);
@@ -399,12 +411,25 @@ function PolygonDrawer() {
   }
 
   // render shapes and elements
+  const renderCurrentPoint = () => {
+    if (currentPoint) {
+      return <circle
+        cx={currentPoint.x}
+        cy={currentPoint.y}
+        r={8}
+        fill="transparent"
+        stroke="#bed929"
+        strokeWidth="4"
+      />
+    }
+  };
+
   const renderPoints = () => {
     return points.map((point, index) => (
       <circle key={index}
         cx={point.x}
         cy={point.y}
-        r={index === 0 && hoverFirstPoint && !isClosed ? "15" : "10"}
+        r={index === 0 && hoverFirstPoint && !isClosed ? 15 : 10}
         fill="#bed929"
         cursor={"move"}
         onMouseDown={() => handlePointDrag(index, point)}
@@ -652,6 +677,7 @@ function PolygonDrawer() {
             {renderPolygon()}
             {renderLines()}
             {renderPoints()}
+            {renderCurrentPoint()}
             {hoverFirstPoint && !isClosed && (
               <circle
                 cx={points.length > 0 ? points[0].x : 0}
@@ -735,7 +761,7 @@ function PolygonDrawer() {
           </div>
           <div>
             <h3>Drawing Board Setting</h3>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <input
                 type="range"
                 min={.5}
@@ -745,6 +771,14 @@ function PolygonDrawer() {
                 onChange={(e) => handleZoom(e)}
               />
               <span>Zoom Scale: {zoomLevel}</span>
+            </div>
+            <div >
+              <input
+                type="checkbox"
+                checked={magneticSnap}
+                onChange={(e) => handleMagneticSnapChange(e.target.checked)}
+              />
+              <span style={{ marginLeft: '5px' }}>Snap To Grid</span>
             </div>
             <div>
               <h4 style={{ marginBottom: '10px' }}>Active Shape: </h4>
