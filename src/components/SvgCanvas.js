@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { saveAs } from 'file-saver';
-import { convertSvgToDxf, convertSvgToDwg, getBezierControlPoint } from '../utils/canvas';
+import { getSvgPosition } from '../utils/canvas';
+import { getBezierControlPoint, drawLineFromPoints, getNewCoordinateOnLineLengthChange, drawPolygonPath } from '../utils/line';
+import { convertSvgToDxf, convertSvgToDwg } from '../utils/export';
 import { getShapePoints } from '../utils/shapes';
+import { GRID_SPACING, PIXEL_PER_INCH } from '../utils/constant';
 
 function PolygonDrawer() {
   const svgRef = useRef(null);
@@ -15,7 +18,8 @@ function PolygonDrawer() {
   const [currentPoint, setCurrentPoint] = useState(null);
   const [selectedLineIndex, setSelectedLineIndex] = useState(null);
   const [selectedLine, setSelectedLine] = useState(null);
-  const [dragPoint, setDragPoint] = useState(null);
+  const [dragPointIndex, setDragPointIndex] = useState(null);
+  const [pointerTarget, setPointerTarget] = useState(null);
   const [isDragged, setIsDragged] = useState(false);
   const [isClosed, setIsClosed] = useState(false);
   const [isCutoutClosed, setIsCutoutClosed] = useState(false);
@@ -23,14 +27,12 @@ function PolygonDrawer() {
   const [zoomLevel, setZoomLevel] = useState(.8);
   const [actionHistory, setActionHistory] = useState([]);
 
-  const PIXEL_PER_INCH = 4 // 4 inch per pixel
-  const GRID_SPACING = 12 * PIXEL_PER_INCH; // 12 inch per grid
-
   useEffect(() => {
 
     // update selected lline on change line index
-    const updateSelectedLine = (newIndex) => {
-      const newSelectedLine = lines[newIndex];
+    const updateSelectedLine = (newIndex, target) => {
+      const linesArray = target === 'shape' ? lines : cutoutLines
+      const newSelectedLine = linesArray[newIndex];
       if (newSelectedLine) {
         setSelectedLine(newSelectedLine);
       }
@@ -39,100 +41,94 @@ function PolygonDrawer() {
       }
     };
 
-    updateSelectedLine(selectedLineIndex)
+    updateSelectedLine(selectedLineIndex, pointerTarget)
 
     // if points and lines are not same then draw the closing line
     if (isClosed && points.length !== lines.length) {
       const updatedLines = [...lines]
-      const newLine = drawLineFromPoints(points[points.length - 1], points[0], points.length - 1);
+      const newLine = drawLineFromPoints(lines, points[points.length - 1], points[0], points.length - 1);
       updatedLines.push(newLine);
       setLines(updatedLines)
     }
 
-    if (activeShape && activeShape !== 'freeDrawing') {
-      //
-    }
-
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isClosed, lines, points, selectedLineIndex]);
+  }, [isClosed, lines, points, selectedLineIndex, pointerTarget]);
 
-  const drawLineFromPoints = (point1, point2, index) => {
-    if (!point1 || !point2) return null;
+  // // COMPONENT FUNCTIONS ======================>>
 
-    const line = !activeTool ? lines[index] : cutoutLines[index]
-
-    const newLine = {
-      x1: Math.round(point1.x),
-      y1: Math.round(point1.y),
-      x2: Math.round(point2.x),
-      y2: Math.round(point2.y),
-      length: Math.round(Math.sqrt((point2.x - point1.x) ** 2 + (point2.y - point1.y) ** 2)),
-      bevel: line ? line.bevel : 'none',
-      bezierCurvature: isClosed && line ? line.bezierCurvature : 0,
-    };
-
-    return newLine;
+  const updatePointsAndLines = (updatedPoints, lineArray, setPointArray, setLineArray) => {
+    // set points
+    setPointArray(updatedPoints)
+    // draw lines
+    updateLinesAfterPointsUpdate(updatedPoints, lineArray, setLineArray)
   }
 
   const drawReadyShape = (value) => {
-
+    // get shape points for selected shape 
     const shapePoints = getShapePoints(value, PIXEL_PER_INCH)
-
-    // set points 
-    setPoints(shapePoints)
-    // draw lines
-    updateLinesAfterPointsUpdate(shapePoints)
+    // create points and lines
+    updatePointsAndLines(shapePoints, lines, setPoints, setLines)
   }
 
-  const getNewCoordinateOnLineLengthChange = (index, newLength) => {
+  const drawRenderLines = (rlines, lineArray, target) => {
+    for (let i = 0; i < lineArray.length; i++) {
+      const line = lineArray[i];
+      const isSelected = selectedLineIndex === i && target === pointerTarget;
 
-    // newLength = 120
-    const line = lines[index]
-    var currentLength = Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2));
-    const changeLength = newLength - currentLength;
+      // Draw main line
+      if (line.bezierCurvature === 0) {
+        rlines.push(
+          <line key={`line-${i}`}
+            x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
+            stroke={isSelected ? '#ff0000' : 'black'}
+            strokeWidth={isSelected ? 6 : 4}
+            cursor={"pointer"}
+            onClick={() => handleLineClick(i, target)}
+          />
+        );
+      }
+      else {
+        const controlPoint = getBezierControlPoint(line.x1, line.y1, line.x2, line.y2, line.bezierCurvature)
+        rlines.push(
+          <path key={`line-${i}`}
+            d={`M ${line.x1} ${line.y1} Q ${controlPoint.x} ${controlPoint.y}, ${line.x2} ${line.y2}`}
+            stroke={isSelected ? '#ff0000' : 'black'}
+            fill={"transparent"}
+            strokeWidth={isSelected ? 6 : 4}
+            cursor={"pointer"}
+            onClick={() => handleLineClick(i, target)}
+          />
+        );
+      }
 
-    // Calculate the change in x-coordinate (Δx) and y-coordinate (Δy)
-    let deltaX = (changeLength / currentLength) * (line.x2 - line.x1);
-    let deltaY = (changeLength / currentLength) * (line.y2 - line.y1);
+      // draw bevel 
+      const bevel = renderBevel(line, i)
+      if (bevel) {
+        rlines.push(bevel)
+      }
 
-    // Update the coordinates of the second point
-    let newX2 = line.x2 + deltaX;
-    let newY2 = line.y2 + deltaY;
-
-    return { x1: line.x1, y1: line.y1, x2: newX2, y2: newY2 };
+      // Draw text
+      const text = renderMarkerText(line.x1, line.y1, line.x2, line.y2, line.length, i, target)
+      rlines.push(text);
+    }
   }
 
-  const updateLinesAfterPointsUpdate = (updatedPoints) => {
+  const updateLinesAfterPointsUpdate = (updatedPoints, lineArray, setLineArray) => {
     const updatedLines = [];
     for (let i = 0; i < updatedPoints.length - 1; i++) {
-      const newLine = drawLineFromPoints(updatedPoints[i], updatedPoints[i + 1], i);
+      const newLine = drawLineFromPoints(lineArray, updatedPoints[i], updatedPoints[i + 1], i, isClosed);
       updatedLines.push(newLine);
     }
 
     // Add line between last and first point for closed polygon
     if (isClosed && updatedPoints.length > 2) {
-      const newLine = drawLineFromPoints(updatedPoints[updatedPoints.length - 1], updatedPoints[0], updatedPoints.length - 1);
+      const newLine = drawLineFromPoints(lineArray, updatedPoints[updatedPoints.length - 1], updatedPoints[0], updatedPoints.length - 1, isClosed);
       updatedLines.push(newLine);
     }
 
     // update lines 
-    setLines(updatedLines);
-    setSelectedLine(lines[selectedLineIndex]);
-  }
-
-  const getSvgPosition = (event) => {
-    const svgRect = event.currentTarget.getBoundingClientRect();
-    let x = (event.clientX - svgRect.left) / zoomLevel;
-    let y = (event.clientY - svgRect.top) / zoomLevel;
-
-    if (magneticSnap) {
-      const nearestX = Math.round(x / GRID_SPACING) * GRID_SPACING;
-      const nearestY = Math.round(y / GRID_SPACING) * GRID_SPACING;
-
-      return { x: nearestX, y: nearestY }
-    }
-
-    return { x, y }
+    setLineArray(updatedLines);
+    setSelectedLine(lineArray[selectedLineIndex]);
   }
 
   // Function to add an action to history
@@ -142,43 +138,9 @@ function PolygonDrawer() {
     setActionHistory(prevHistory);
   };
 
-  // New function to render the grid
-  const renderGrid = () => {
-    const gridLines = [];
-
-    // Horizontal lines
-    for (let y = 0; y <= 720; y += GRID_SPACING) {
-      gridLines.push(
-        <line key={`horizontal-${y}`}
-          className='grid-line'
-          x1={0} y1={y} x2={960} y2={y}
-          stroke="#ddd"
-          strokeWidth={1}
-        />
-      );
-    }
-
-    // Vertical lines
-    for (let x = 0; x <= 960; x += GRID_SPACING) {
-      gridLines.push(
-        <line key={`vertical-${x}`}
-          className='grid-line'
-          x1={x} y1={0} x2={x} y2={720}
-          stroke="#ddd"
-          strokeWidth={1}
-        />
-      );
-    }
-
-    return gridLines;
-  };
+  // // DOM INTERACTION FUNCTION ============================>>
 
   const handleActiveShapeChange = (value) => {
-    // const confirmed = window.confirm("Are you sure you want to clear and change the active shape?");
-    // if (!confirmed) {
-    //   return; // Do nothing if not confirmed
-    // }
-
     handleClear()
     setActiveShape(value)
     if (value === 'freeDrawing') return;
@@ -196,15 +158,13 @@ function PolygonDrawer() {
     setMagneticSnap(value);
   };
 
-  const handleLineClick = (index) => {
-    if (activeTool) {
-      return
-    }
+  const handleLineClick = (index, target) => {
+    setPointerTarget(target)
     setSelectedLineIndex(index);
   };
 
   const handlePointClick = (event) => {
-    const svgPos = getSvgPosition(event);
+    const svgPos = getSvgPosition(event, zoomLevel, magneticSnap);
     const newPoint = svgPos;
 
     if (isClosed) {
@@ -220,32 +180,22 @@ function PolygonDrawer() {
           if (isCutoutClosed) return
 
           if (hoverFirstPoint) {
-            if (cutoutPoints.length <= 2) {
-              return;
-            }
-            const newPoint = cutoutPoints[0]
-            const newline = drawLineFromPoints(cutoutPoints[cutoutPoints.length - 1], newPoint, cutoutPoints.length - 1)
-
-            if (newline) {
-              setCutoutLines([...cutoutLines, newline]);
-            }
-            setIsCutoutClosed(true);
-            // addActionToHistory({ type: 'closePolygon' })
+            drawPolygonPath(cutoutLines, cutoutPoints, setCutoutLines, setIsCutoutClosed)
+            setActiveTool(null)
+            addActionToHistory({ type: 'closeCutoutPolygon' });
             return;
           }
 
           // set new point 
           setCutoutPoints([...cutoutPoints, newPoint]);
-          // addActionToHistory({ type: 'addPoint', point: newPoint })
+          addActionToHistory({ type: 'addCutoutPoint', point: newPoint })
           setCurrentPoint(null);
 
           //draw line
-          const newline = drawLineFromPoints(cutoutPoints[cutoutPoints.length - 1], newPoint, cutoutPoints.length - 1)
+          const newline = drawLineFromPoints(cutoutLines, cutoutPoints[cutoutPoints.length - 1], newPoint, cutoutPoints.length - 1, isCutoutClosed)
           if (newline) {
             setCutoutLines([...cutoutLines, newline]);
           }
-
-
         }
       }
 
@@ -253,64 +203,63 @@ function PolygonDrawer() {
     }
 
     if (hoverFirstPoint) {
-      if (points.length <= 2) {
-        return;
-      }
-      const newPoint = points[0]
-      const newline = drawLineFromPoints(points[points.length - 1], newPoint, points.length - 1)
-
-      if (newline) {
-        setLines([...lines, newline]);
-      }
-      setIsClosed(true);
+      drawPolygonPath(lines, points, setLines, setIsClosed)
       addActionToHistory({ type: 'closePolygon' })
       return;
     }
 
-    // set new point 
-    // const svgPos = getSvgPosition(event);
-    // const newPoint = svgPos;
+    // set new point
 
     setPoints([...points, newPoint]);
     addActionToHistory({ type: 'addPoint', point: newPoint })
     setCurrentPoint(null);
 
     //draw line
-    const newline = drawLineFromPoints(points[points.length - 1], newPoint, points.length - 1)
+    const newline = drawLineFromPoints(lines, points[points.length - 1], newPoint, points.length - 1, isClosed)
     if (newline) {
       setLines([...lines, newline]);
     }
   };
 
+  const handleDragging = (svgPos, pointsArray, setPointsArray, linesArray, setLinesArray) => {
+    if (isDragged) {
+      const updatedPoints = [...pointsArray];
+      updatedPoints[dragPointIndex] = svgPos;
+      updatePointsAndLines(updatedPoints, linesArray, setPointsArray, setLinesArray);
+    }
+  };
+
   const handleMouseMove = (event) => {
-    const svgPos = getSvgPosition(event);
+    // get mouse position on svg 
+    const svgPos = getSvgPosition(event, zoomLevel, magneticSnap);
 
+    // check shape is closed 
     if (isClosed) {
-      if (isDragged) {
-        dragPoint.x = svgPos.x;
-        dragPoint.y = svgPos.y;
-
-        const updatedPoints = [...points];
-        setPoints(updatedPoints);
-
-        // lines should be updated after updating points 
-        updateLinesAfterPointsUpdate(updatedPoints);
+      // check cutout is closed 
+      if (isCutoutClosed && pointerTarget === 'cutout') {
+        // drag points for closed cutout 
+        handleDragging(svgPos, cutoutPoints, setCutoutPoints, cutoutLines, setCutoutLines)
+        return
       }
 
+      // check tool is active
       if (activeTool) {
-        if (isCutoutClosed) {
-          return
-        }
+        // move point with mouse move if not closed 
         setCurrentPoint(svgPos);
-
+        // if mouse is near the initial point then suggest to close cutout polygon 
         const withinRadius = cutoutPoints.length > 0 && Math.abs(cutoutPoints[0].x - svgPos.x) < 15 && Math.abs(cutoutPoints[0].y - svgPos.y) < 15;
         setHoverFirstPoint(withinRadius);
       }
+
+      // if tool is not active then move the shape points 
+      handleDragging(svgPos, points, setPoints, lines, setLines)
       return
     }
 
+    // if shape is not closed then move the drawing point 
     setCurrentPoint(svgPos);
 
+    // if mouse is near the initial point then suggest to close polygon
     const withinRadius = points.length > 0 && Math.abs(points[0].x - svgPos.x) < 15 && Math.abs(points[0].y - svgPos.y) < 15;
     setHoverFirstPoint(withinRadius);
   };
@@ -328,25 +277,28 @@ function PolygonDrawer() {
     setZoomLevel(newZoomLevel);
   }
 
-  const handlePointDrag = (index, point) => {
-    if (!isClosed) {
-      return;
-    }
-
+  const handlePointDrag = (index, point, target) => {
+    // add history 
     const oldPoint = { ...point }
-    if (!dragPoint) {
-      addActionToHistory({ type: 'movePoint', index: index, point: oldPoint })
+    if (!dragPointIndex) {
+      if (target === 'shape') {
+        addActionToHistory({ type: 'movePoint', index: index, point: oldPoint })
+      }
+      else {
+        addActionToHistory({ type: 'moveCutoutPoint', index: index, point: oldPoint })
+      }
     }
 
+    // set Drag faetures 
     setIsDragged(true)
-    const draggedPoint = points[index]
-    setDragPoint(draggedPoint)
-
+    setPointerTarget(target)
+    setDragPointIndex(index)
   }
 
   const handlePointDragEnd = (event) => {
     setIsDragged(false)
-    setDragPoint(null)
+    setPointerTarget(null)
+    setDragPointIndex(null)
   }
 
   const handleMouseEnterFirstPoint = () => {
@@ -358,39 +310,45 @@ function PolygonDrawer() {
   };
 
   const handleLineLengthChange = (index, newLength) => {
+    const pointArray = pointerTarget === 'shape' ? points : cutoutPoints
+    const lineArray = pointerTarget === 'shape' ? lines : cutoutLines
+    const setPointArray = pointerTarget === 'shape' ? setPoints : setCutoutPoints
+    const setLineArray = pointerTarget === 'shape' ? setLines : setCutoutLines
 
     // get points indexes 
     let firstPointIndex = selectedLineIndex
     let lastPointIndex = selectedLineIndex + 1
-    if (selectedLineIndex === lines.length - 1) {
+    if (selectedLineIndex === lineArray.length - 1) {
       firstPointIndex = selectedLineIndex
       lastPointIndex = 0
     }
 
-    const updatedPoints = [...points];
-    const newCord = getNewCoordinateOnLineLengthChange(index, newLength);
+    const updatedPoints = [...pointArray];
+    const newCord = getNewCoordinateOnLineLengthChange(lines, index, newLength);
 
     updatedPoints[firstPointIndex].x = newCord.x1
     updatedPoints[firstPointIndex].y = newCord.y1
     updatedPoints[lastPointIndex].x = newCord.x2
     updatedPoints[lastPointIndex].y = newCord.y2
-    setPoints(updatedPoints);
 
-    // lines should be updated after updating points 
-    updateLinesAfterPointsUpdate(updatedPoints);
+    updatePointsAndLines(updatedPoints, lineArray, setPointArray, setLineArray)
   };
 
   // Update the handleBezierCurvatureChange function
   const handleBezierCurvatureChange = (index, value) => {
-    const updatedLines = [...lines];
+    const lineArray = pointerTarget === 'shape' ? lines : cutoutLines
+    const setLineArray = pointerTarget === 'shape' ? setLines : setCutoutLines
+    const updatedLines = [...lineArray];
     updatedLines[index].bezierCurvature = value;
-    setLines(updatedLines);
+    setLineArray(updatedLines);
   };
 
   const handleBevelChange = (index, value) => {
-    const updatedLines = [...lines]
+    const lineArray = pointerTarget === 'shape' ? lines : cutoutLines;
+    const setLineArray = pointerTarget === 'shape' ? setLines : setCutoutLines;
+    const updatedLines = [...lineArray]
     updatedLines[index].bevel = value
-    setLines(updatedLines);
+    setLineArray(updatedLines);
   }
 
   const handleExportDwg = () => {
@@ -426,16 +384,14 @@ function PolygonDrawer() {
           setIsClosed(false)
         }
         const updatedPoints = points.slice(0, -1);
-        setPoints(updatedPoints);
-        updateLinesAfterPointsUpdate(updatedPoints)
+        updatePointsAndLines(updatedPoints, lines, setPoints, setLines)
         break;
       case 'movePoint':
         console.log(lastAction);
         const movedPoint = lastAction.point
         const newPoints = [...points]
         newPoints[lastAction.index] = movedPoint;
-        setPoints(newPoints);
-        updateLinesAfterPointsUpdate(newPoints)
+        updatePointsAndLines(newPoints, lines, setPoints, setLines)
         break;
       // case 'addBevel':
       //   break;
@@ -486,6 +442,39 @@ function PolygonDrawer() {
     }
   };
 
+  // // RENDER FUNCTIONS =======================>>
+
+  // New function to render the grid
+  const renderGrid = () => {
+    const gridLines = [];
+
+    // Horizontal lines
+    for (let y = 0; y <= 720; y += GRID_SPACING) {
+      gridLines.push(
+        <line key={`horizontal-${y}`}
+          className='grid-line'
+          x1={0} y1={y} x2={960} y2={y}
+          stroke="#ddd"
+          strokeWidth={1}
+        />
+      );
+    }
+
+    // Vertical lines
+    for (let x = 0; x <= 960; x += GRID_SPACING) {
+      gridLines.push(
+        <line key={`vertical-${x}`}
+          className='grid-line'
+          x1={x} y1={0} x2={x} y2={720}
+          stroke="#ddd"
+          strokeWidth={1}
+        />
+      );
+    }
+
+    return gridLines;
+  };
+
   const renderPoints = () => {
     return points.map((point, index) => (
       <circle key={index}
@@ -494,7 +483,7 @@ function PolygonDrawer() {
         r={index === 0 && hoverFirstPoint && !isClosed ? 15 : 10}
         fill="#bed929"
         cursor={"move"}
-        onMouseDown={() => handlePointDrag(index, point)}
+        onMouseDown={() => handlePointDrag(index, point, 'shape')}
       />
     ));
   };
@@ -507,7 +496,7 @@ function PolygonDrawer() {
         r={index === 0 && hoverFirstPoint && !isCutoutClosed ? 15 : 10}
         fill="#bed929"
         cursor={"move"}
-      // onMouseDown={() => handlePointDrag(index, point)}
+        onMouseDown={() => handlePointDrag(index, point, 'cutout')}
       />
     ));
   };
@@ -516,46 +505,7 @@ function PolygonDrawer() {
     const rlines = [];
 
     // Draw lines between consecutive points
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const isSelected = selectedLineIndex === i;
-
-      // Draw main line
-      if (line.bezierCurvature === 0) {
-        rlines.push(
-          <line key={`line-${i}`}
-            x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
-            stroke={isSelected ? '#ff0000' : 'black'}
-            strokeWidth={isSelected ? 6 : 4}
-            cursor={"pointer"}
-            onClick={() => handleLineClick(i)}
-          />
-        );
-      }
-      else {
-        const controlPoint = getBezierControlPoint(line.x1, line.y1, line.x2, line.y2, line.bezierCurvature)
-        rlines.push(
-          <path key={`line-${i}`}
-            d={`M ${line.x1} ${line.y1} Q ${controlPoint.x} ${controlPoint.y}, ${line.x2} ${line.y2}`}
-            stroke={isSelected ? '#ff0000' : 'black'}
-            fill={"transparent"}
-            strokeWidth={isSelected ? 6 : 4}
-            cursor={"pointer"}
-            onClick={() => handleLineClick(i)}
-          />
-        );
-      }
-
-      // draw bevel 
-      const bevel = renderBevel(line, i)
-      if (bevel) {
-        rlines.push(bevel)
-      }
-
-      // Draw text
-      const text = renderMarkerText(line.x1, line.y1, line.x2, line.y2, line.length, i)
-      rlines.push(text);
-    }
+    drawRenderLines(rlines, lines, 'shape');
 
     // Draw line between last point and current point if not closed
     if (currentPoint !== null && points.length > 0 && !isClosed) {
@@ -571,7 +521,7 @@ function PolygonDrawer() {
 
       // Calculate text position
       const length = Math.round(Math.sqrt((currentPoint.x - lastPoint.x) ** 2 + (currentPoint.y - lastPoint.y) ** 2))
-      const text = renderMarkerText(lastPoint.x, lastPoint.y, currentPoint.x, currentPoint.y, length, points.length)
+      const text = renderMarkerText(lastPoint.x, lastPoint.y, currentPoint.x, currentPoint.y, length, points.length, 'shape')
       rlines.push(text);
     }
 
@@ -582,42 +532,8 @@ function PolygonDrawer() {
   const renderCutoutLines = () => {
     const rlines = [];
 
-    // Draw lines between consecutive points
-    for (let i = 0; i < cutoutLines.length; i++) {
-      const line = cutoutLines[i];
-      // const isSelected = selectedLineIndex === i;
-
-      // Draw main line
-      if (line.bezierCurvature === 0) {
-        rlines.push(
-          <line key={`cutout-line-${i}`}
-            x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
-            stroke={'black'}
-            strokeWidth={4}
-            cursor={"pointer"}
-          // onClick={() => handleLineClick(i)}
-          />
-        );
-      }
-      // else {
-      //   const controlPoint = getBezierControlPoint(line.x1, line.y1, line.x2, line.y2, line.bezierCurvature)
-      //   rlines.push(
-      //     <path key={`line-${i}`}
-      //       d={`M ${line.x1} ${line.y1} Q ${controlPoint.x} ${controlPoint.y}, ${line.x2} ${line.y2}`}
-      //       stroke={isSelected ? '#ff0000' : 'black'}
-      //       fill={"transparent"}
-      //       strokeWidth={isSelected ? 6 : 4}
-      //       cursor={"pointer"}
-      //       onClick={() => handleLineClick(i)}
-      //     />
-      //   );
-      // }
-
-
-      // Draw text
-      const text = renderMarkerText(line.x1, line.y1, line.x2, line.y2, line.length, i)
-      rlines.push(text);
-    }
+    // Draw cutout lines between consecutive points
+    drawRenderLines(rlines, cutoutLines, 'cutout')
 
     // Draw line between last point and current point if not closed
     if (currentPoint !== null && cutoutPoints.length > 0 && isClosed) {
@@ -633,7 +549,7 @@ function PolygonDrawer() {
 
       // Calculate text position
       const length = Math.round(Math.sqrt((currentPoint.x - lastPoint.x) ** 2 + (currentPoint.y - lastPoint.y) ** 2))
-      const text = renderMarkerText(lastPoint.x, lastPoint.y, currentPoint.x, currentPoint.y, length, points.length)
+      const text = renderMarkerText(lastPoint.x, lastPoint.y, currentPoint.x, currentPoint.y, length, points.length, 'cutout')
       rlines.push(text);
     }
 
@@ -687,7 +603,7 @@ function PolygonDrawer() {
     return bevel;
   }
 
-  const renderMarkerText = (x1, y1, x2, y2, lineLength, index) => {
+  const renderMarkerText = (x1, y1, x2, y2, lineLength, index, target) => {
     const textStyles = {
       fontSize: '14px',
       fill: '#000',
@@ -706,7 +622,7 @@ function PolygonDrawer() {
     const perpendicularY = -dx / length * 20; // Perpendicular vector y-component for text placement
 
     // Draw text
-    return <text key={`text-${index}`}
+    return <text key={`${target}-text-${index}`}
       x={textX + perpendicularX} y={textY + perpendicularY}
       textAnchor="middle"
       dominantBaseline="middle"
@@ -751,8 +667,6 @@ function PolygonDrawer() {
 
   const renderCutoutPolygon = () => {
     const cpoints = [...cutoutPoints]
-    // cpoints.reverse()
-    // console.log(cpoints);
     if (cpoints.length < 3 || !isCutoutClosed) return null;
 
     let pathString = `M ${cpoints[0].x} ${cpoints[0].y}`;
@@ -861,6 +775,16 @@ function PolygonDrawer() {
                 cy={points.length > 0 ? points[0].y : 0}
                 r="10"
                 fill="#dfed91"
+                onMouseEnter={handleMouseEnterFirstPoint}
+                onMouseLeave={handleMouseLeaveFirstPoint}
+              />
+            )}
+            {hoverFirstPoint && !isCutoutClosed && (
+              <circle
+                cx={points.length > 0 ? points[0].x : 0}
+                cy={points.length > 0 ? points[0].y : 0}
+                r="10"
+                fill="#dfe561"
                 onMouseEnter={handleMouseEnterFirstPoint}
                 onMouseLeave={handleMouseLeaveFirstPoint}
               />
