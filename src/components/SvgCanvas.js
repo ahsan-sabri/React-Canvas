@@ -329,7 +329,7 @@ function PolygonDrawer() {
     }
 
     const updatedPoints = [...pointArray];
-    const newCord = getNewCoordinateOnLineLengthChange(lines, index, newLength);
+    const newCord = getNewCoordinateOnLineLengthChange(lineArray, index, newLength);
 
     updatedPoints[firstPointIndex].x = newCord.x1
     updatedPoints[firstPointIndex].y = newCord.y1

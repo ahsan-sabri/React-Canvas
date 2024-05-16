@@ -1,19 +1,19 @@
 export const getNewCoordinateOnLineLengthChange = (linesArray, index, newLength) => {
-
-  // newLength = 120
-  const line = linesArray[index]
-  var currentLength = Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2));
+  const line = linesArray[index];
+  const currentLength = Math.sqrt(Math.pow(line.x2 - line.x1, 2) + Math.pow(line.y2 - line.y1, 2));
   const changeLength = newLength - currentLength;
 
-  // Calculate the change in x-coordinate (Δx) and y-coordinate (Δy)
-  let deltaX = (changeLength / currentLength) * (line.x2 - line.x1);
-  let deltaY = (changeLength / currentLength) * (line.y2 - line.y1);
+  // Calculate the change in x-coordinate (Δx) and y-coordinate (Δy) for both points
+  const deltaX = (changeLength / (2 * currentLength)) * (line.x2 - line.x1);
+  const deltaY = (changeLength / (2 * currentLength)) * (line.y2 - line.y1);
 
-  // Update the coordinates of the second point
-  let newX2 = line.x2 + deltaX;
-  let newY2 = line.y2 + deltaY;
+  // Update the coordinates of both points
+  const newX1 = line.x1 - deltaX;
+  const newY1 = line.y1 - deltaY;
+  const newX2 = line.x2 + deltaX;
+  const newY2 = line.y2 + deltaY;
 
-  return { x1: line.x1, y1: line.y1, x2: newX2, y2: newY2 };
+  return { x1: newX1, y1: newY1, x2: newX2, y2: newY2 };
 }
 
 export const getBezierControlPoint = (x1, y1, x2, y2, curvature) => {
