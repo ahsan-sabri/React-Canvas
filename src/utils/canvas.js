@@ -43,7 +43,23 @@ export const distance = (x1, y1, x2, y2) => {
   return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
 }
 
-export const getSvgPosition = (event, zoomLevel, magneticSnap) => {
+function distanceToLineSegment(x, y, x1, y1, x2, y2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const t = ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy);
+
+  if (t <= 0) {
+    return Math.sqrt((x - x1) ** 2 + (y - y1) ** 2);
+  } else if (t >= 1) {
+    return Math.sqrt((x - x2) ** 2 + (y - y2) ** 2);
+  } else {
+    const nearestX = x1 + t * dx;
+    const nearestY = y1 + t * dy;
+    return Math.sqrt((x - nearestX) ** 2 + (y - nearestY) ** 2);
+  }
+}
+
+export const getSvgPosition = (event, zoomLevel, magneticSnap, activeTool) => {
   const svgRect = event.currentTarget.getBoundingClientRect();
   let x = (event.clientX - svgRect.left) / zoomLevel;
   let y = (event.clientY - svgRect.top) / zoomLevel;
@@ -53,7 +69,17 @@ export const getSvgPosition = (event, zoomLevel, magneticSnap) => {
     const nearestX = Math.round(x / GRID_SPACING) * GRID_SPACING;
     const nearestY = Math.round(y / GRID_SPACING) * GRID_SPACING;
 
-    return { x: nearestX, y: nearestY }
+    x = nearestX
+    y = nearestY
+  }
+
+  // seam points on the line only if active tool is seam 
+  if (activeTool === 'seam') {
+    const lines = document.getElementsByClassName('line');
+    const nearestPoint = findNearestPointOnLines(lines, { x, y });
+
+    x = nearestPoint.x
+    y = nearestPoint.y
   }
 
   return { x, y }
@@ -62,4 +88,34 @@ export const getSvgPosition = (event, zoomLevel, magneticSnap) => {
 export const checkCurrentPointInsideShape = (point) => {
   const shapePolygon = document.getElementById('shapePolygon')
   return shapePolygon.isPointInFill(point)
+}
+
+// Function to find the nearest point on the lines from a given point
+function findNearestPointOnLines(lines, point) {
+  let nearestPoint;
+  let minDistance = Infinity;
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const x1 = parseFloat(line.getAttribute('x1'));
+    const y1 = parseFloat(line.getAttribute('y1'));
+    const x2 = parseFloat(line.getAttribute('x2'));
+    const y2 = parseFloat(line.getAttribute('y2'));
+
+    // Calculate the distance from the point to the line segment
+    const dist = distanceToLineSegment(point.x, point.y, x1, y1, x2, y2);
+
+    // Update nearest point if the current distance is smaller
+    if (dist < minDistance) {
+      minDistance = dist;
+      const t = ((point.x - x1) * (x2 - x1) + (point.y - y1) * (y2 - y1)) /
+        ((x2 - x1) ** 2 + (y2 - y1) ** 2);
+      nearestPoint = {
+        x: x1 + t * (x2 - x1),
+        y: y1 + t * (y2 - y1)
+      };
+    }
+  }
+
+  return nearestPoint;
 }

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { saveAs } from 'file-saver';
-import { getSvgPosition, checkCurrentPointInsideShape } from '../utils/canvas';
+import { getSvgPosition, checkCurrentPointInsideShape, checkCurrentPointOnTheLine } from '../utils/canvas';
 import { getBezierControlPoint, drawLineFromPoints, getNewCoordinateOnLineLengthChange, drawPolygonPath } from '../utils/line';
 import { convertSvgToDxf, convertSvgToDwg } from '../utils/export';
 import { getShapePoints } from '../utils/shapes';
@@ -13,8 +13,10 @@ function PolygonDrawer() {
   const [magneticSnap, setMagneticSnap] = useState(true);
   const [points, setPoints] = useState([]);
   const [cutoutPoints, setCutoutPoints] = useState([]);
+  const [seamPoints, setSeamPoints] = useState([]);
   const [lines, setLines] = useState([]);
   const [cutoutLines, setCutoutLines] = useState([]);
+  const [seamLines, setSeamLines] = useState([]);
   const [currentPoint, setCurrentPoint] = useState(null);
   const [selectedLineIndex, setSelectedLineIndex] = useState(null);
   const [selectedLine, setSelectedLine] = useState(null);
@@ -78,7 +80,8 @@ function PolygonDrawer() {
       // Draw main line
       if (line.bezierCurvature === 0) {
         rlines.push(
-          <line key={`line-${i}`}
+          <line key={`${target}-line-${i}`}
+            className={`line ${target}-line`}
             x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
             stroke={isSelected ? '#ff0000' : 'black'}
             strokeWidth={isSelected ? 6 : 4}
@@ -90,7 +93,8 @@ function PolygonDrawer() {
       else {
         const controlPoint = getBezierControlPoint(line.x1, line.y1, line.x2, line.y2, line.bezierCurvature)
         rlines.push(
-          <path key={`line-${i}`}
+          <path key={`${target}-line-${i}`}
+            className={`line ${target}-line`}
             d={`M ${line.x1} ${line.y1} Q ${controlPoint.x} ${controlPoint.y}, ${line.x2} ${line.y2}`}
             stroke={isSelected ? '#ff0000' : 'black'}
             fill={"transparent"}
@@ -164,7 +168,7 @@ function PolygonDrawer() {
   };
 
   const handlePointClick = (event) => {
-    const svgPos = getSvgPosition(event, zoomLevel, magneticSnap);
+    const svgPos = getSvgPosition(event, zoomLevel, magneticSnap, activeTool);
     const newPoint = svgPos;
 
     if (isClosed) {
@@ -177,28 +181,50 @@ function PolygonDrawer() {
         // check the point in inside shape polygon
         const isInsideShape = checkCurrentPointInsideShape(svgPos)
         if (isInsideShape) {
-          // if cutout close then return 
-          if (isCutoutClosed) return
+          switch (activeTool) {
+            case 'cutout':
+              // if cutout close then return 
+              if (isCutoutClosed) return
 
-          // check first point hover to close cutout 
-          if (hoverFirstPoint) {
-            drawPolygonPath(cutoutLines, cutoutPoints, setCutoutLines, setIsCutoutClosed)
-            setActiveTool(null)
-            setCurrentPoint(null);
-            addActionToHistory({ type: 'closeCutoutPolygon' });
+              // check first point hover to close cutout 
+              if (hoverFirstPoint) {
+                drawPolygonPath(cutoutLines, cutoutPoints, setCutoutLines, setIsCutoutClosed)
+                setActiveTool(null)
+                setCurrentPoint(null);
+                addActionToHistory({ type: 'closeCutoutPolygon' });
 
-            return;
-          }
+                return;
+              }
 
-          // set new point 
-          setCutoutPoints([...cutoutPoints, newPoint]);
-          addActionToHistory({ type: 'addCutoutPoint', point: newPoint })
+              // set new point 
+              setCutoutPoints([...cutoutPoints, newPoint]);
+              addActionToHistory({ type: 'addCutoutPoint', point: newPoint })
 
 
-          //draw line
-          const newline = drawLineFromPoints(cutoutLines, cutoutPoints[cutoutPoints.length - 1], newPoint, cutoutPoints.length - 1, isCutoutClosed)
-          if (newline) {
-            setCutoutLines([...cutoutLines, newline]);
+              //draw line
+              const newline = drawLineFromPoints(cutoutLines, cutoutPoints[cutoutPoints.length - 1], newPoint, cutoutPoints.length - 1, isCutoutClosed)
+              if (newline) {
+                setCutoutLines([...cutoutLines, newline]);
+              }
+              break;
+
+            case 'seam':
+              // set new point 
+              setSeamPoints([...seamPoints, newPoint]);
+              addActionToHistory({ type: 'addSeamPoint', point: newPoint })
+
+              //draw line
+              if (seamPoints.length % 2) {
+                const newSeamline = drawLineFromPoints(seamLines, seamPoints[seamPoints.length - 1], newPoint, seamPoints.length - 2, isCutoutClosed)
+                if (newSeamline) {
+                  setSeamLines([...seamLines, newSeamline]);
+                }
+              }
+
+              break;
+
+            default:
+              break;
           }
         }
       }
@@ -236,7 +262,7 @@ function PolygonDrawer() {
 
   const handleMouseMove = (event) => {
     // get mouse position on svg 
-    const svgPos = getSvgPosition(event, zoomLevel, magneticSnap);
+    const svgPos = getSvgPosition(event, zoomLevel, magneticSnap, activeTool);
 
     // check shape is closed 
     if (isClosed) {
@@ -518,7 +544,7 @@ function PolygonDrawer() {
       const lastPoint = points[points.length - 1];
 
       rlines.push(
-        <line key={points.length}
+        <line key={`shape-line-${points.length}`}
           x1={lastPoint.x} y1={lastPoint.y} x2={currentPoint.x} y2={currentPoint.y}
           stroke={'black'}
           strokeWidth={4}
@@ -546,7 +572,7 @@ function PolygonDrawer() {
       const lastPoint = cutoutPoints[cutoutPoints.length - 1];
 
       rlines.push(
-        <line key={cutoutPoints.length}
+        <line key={`shape-line-${cutoutPoints.length}`}
           x1={lastPoint.x} y1={lastPoint.y} x2={currentPoint.x} y2={currentPoint.y}
           stroke={'black'}
           strokeWidth={4}
@@ -557,6 +583,41 @@ function PolygonDrawer() {
       const length = Math.round(Math.sqrt((currentPoint.x - lastPoint.x) ** 2 + (currentPoint.y - lastPoint.y) ** 2))
       const text = renderMarkerText(lastPoint.x, lastPoint.y, currentPoint.x, currentPoint.y, length, points.length, 'cutout')
       rlines.push(text);
+    }
+
+    return rlines;
+  };
+
+  const renderSeamLines = () => {
+    const rlines = [];
+
+    // Draw seam lines between consecutive points
+    for (let i = 0; i < seamLines.length; i++) {
+      const line = seamLines[i];
+
+      // Draw main line
+      rlines.push(
+        <line key={`seam-line-${i}`}
+          x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
+          stroke={'grey'}
+          strokeWidth={3}
+          strokeDasharray={[7, 7]}
+        />
+      );
+    }
+
+    // Draw line between last point and current point if not closed
+    if (currentPoint && seamPoints.length % 2 !== 0) {
+      const lastPoint = seamPoints[seamPoints.length - 1];
+
+      rlines.push(
+        <line key={`seam-${points.length}`}
+          x1={lastPoint.x} y1={lastPoint.y} x2={currentPoint.x} y2={currentPoint.y}
+          stroke={'grey'}
+          strokeWidth={4}
+          strokeDasharray={[7, 7]}
+        />
+      );
     }
 
     return rlines;
@@ -668,7 +729,7 @@ function PolygonDrawer() {
     pathString += ' Z';
 
     // Return the path element
-    return <path id="shapePolygon" className='polygon' d={pathString} fill={cutoutPoints.length > 0 ? 'rgba(0, 210, 255, .5)' : '#00D2FF'} />;
+    return <path id="shapePolygon" className='polygon' d={pathString} fill={cutoutPoints.length > 0 ? 'rgba(0, 210, 255, .7)' : '#00D2FF'} />;
   };
 
   const renderCutoutPolygon = () => {
@@ -702,7 +763,7 @@ function PolygonDrawer() {
     pathString += ' Z';
 
     // Return the path element
-    return <path className='polygon' d={pathString} fill="rgba(255, 255, 255, .4)" />;
+    return <path className='polygon' d={pathString} fill="rgba(255, 255, 255, .3)" />;
   };
 
   return (
@@ -773,6 +834,7 @@ function PolygonDrawer() {
             {renderCutoutPolygon()}
             {renderCutoutLines()}
             {renderCutoutPoints()}
+            {renderSeamLines()}
             {renderCurrentPoint()}
             {hoverFirstPoint && !isClosed && (
               <circle
