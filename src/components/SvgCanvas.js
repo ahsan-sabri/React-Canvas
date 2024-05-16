@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { saveAs } from 'file-saver';
-import { getSvgPosition } from '../utils/canvas';
+import { getSvgPosition, checkCurrentPointInsideShape } from '../utils/canvas';
 import { getBezierControlPoint, drawLineFromPoints, getNewCoordinateOnLineLengthChange, drawPolygonPath } from '../utils/line';
 import { convertSvgToDxf, convertSvgToDwg } from '../utils/export';
 import { getShapePoints } from '../utils/shapes';
@@ -174,22 +174,26 @@ function PolygonDrawer() {
       }
 
       if (activeTool) {
-        const el = event.target;
-        if (el.tagName === 'path' && el.classList.contains('polygon')) {
-
+        // check the point in inside shape polygon
+        const isInsideShape = checkCurrentPointInsideShape(svgPos)
+        if (isInsideShape) {
+          // if cutout close then return 
           if (isCutoutClosed) return
 
+          // check first point hover to close cutout 
           if (hoverFirstPoint) {
             drawPolygonPath(cutoutLines, cutoutPoints, setCutoutLines, setIsCutoutClosed)
             setActiveTool(null)
+            setCurrentPoint(null);
             addActionToHistory({ type: 'closeCutoutPolygon' });
+
             return;
           }
 
           // set new point 
           setCutoutPoints([...cutoutPoints, newPoint]);
           addActionToHistory({ type: 'addCutoutPoint', point: newPoint })
-          setCurrentPoint(null);
+
 
           //draw line
           const newline = drawLineFromPoints(cutoutLines, cutoutPoints[cutoutPoints.length - 1], newPoint, cutoutPoints.length - 1, isCutoutClosed)
@@ -204,7 +208,9 @@ function PolygonDrawer() {
 
     if (hoverFirstPoint) {
       drawPolygonPath(lines, points, setLines, setIsClosed)
+      setCurrentPoint(null);
       addActionToHistory({ type: 'closePolygon' })
+
       return;
     }
 
@@ -212,7 +218,6 @@ function PolygonDrawer() {
 
     setPoints([...points, newPoint]);
     addActionToHistory({ type: 'addPoint', point: newPoint })
-    setCurrentPoint(null);
 
     //draw line
     const newline = drawLineFromPoints(lines, points[points.length - 1], newPoint, points.length - 1, isClosed)
@@ -432,6 +437,7 @@ function PolygonDrawer() {
   const renderCurrentPoint = () => {
     if (currentPoint) {
       return <circle
+        id='currentPoint'
         cx={currentPoint.x}
         cy={currentPoint.y}
         r={8}
@@ -489,14 +495,14 @@ function PolygonDrawer() {
   };
 
   const renderCutoutPoints = () => {
-    return cutoutPoints.map((point, index) => (
+    return cutoutPoints.map((cpoint, index) => (
       <circle key={`cutout-point-${index}`}
-        cx={point.x}
-        cy={point.y}
+        cx={cpoint.x}
+        cy={cpoint.y}
         r={index === 0 && hoverFirstPoint && !isCutoutClosed ? 15 : 10}
         fill="#bed929"
         cursor={"move"}
-        onMouseDown={() => handlePointDrag(index, point, 'cutout')}
+        onMouseDown={() => handlePointDrag(index, cpoint, 'cutout')}
       />
     ));
   };
@@ -508,7 +514,7 @@ function PolygonDrawer() {
     drawRenderLines(rlines, lines, 'shape');
 
     // Draw line between last point and current point if not closed
-    if (currentPoint !== null && points.length > 0 && !isClosed) {
+    if (currentPoint && points.length > 0 && !isClosed) {
       const lastPoint = points[points.length - 1];
 
       rlines.push(
@@ -536,7 +542,7 @@ function PolygonDrawer() {
     drawRenderLines(rlines, cutoutLines, 'cutout')
 
     // Draw line between last point and current point if not closed
-    if (currentPoint !== null && cutoutPoints.length > 0 && isClosed) {
+    if (currentPoint && cutoutPoints.length > 0 && !isCutoutClosed) {
       const lastPoint = cutoutPoints[cutoutPoints.length - 1];
 
       rlines.push(
@@ -662,7 +668,7 @@ function PolygonDrawer() {
     pathString += ' Z';
 
     // Return the path element
-    return <path className='polygon' d={pathString} fill={cutoutPoints.length > 0 ? 'rgba(0, 210, 255, .5)' : '#00D2FF'} />;
+    return <path id="shapePolygon" className='polygon' d={pathString} fill={cutoutPoints.length > 0 ? 'rgba(0, 210, 255, .5)' : '#00D2FF'} />;
   };
 
   const renderCutoutPolygon = () => {
@@ -767,7 +773,6 @@ function PolygonDrawer() {
             {renderCutoutPolygon()}
             {renderCutoutLines()}
             {renderCutoutPoints()}
-
             {renderCurrentPoint()}
             {hoverFirstPoint && !isClosed && (
               <circle

@@ -48,6 +48,7 @@ export const getSvgPosition = (event, zoomLevel, magneticSnap) => {
   let x = (event.clientX - svgRect.left) / zoomLevel;
   let y = (event.clientY - svgRect.top) / zoomLevel;
 
+  // magnietic snap point for nearest intersection
   if (magneticSnap) {
     const nearestX = Math.round(x / GRID_SPACING) * GRID_SPACING;
     const nearestY = Math.round(y / GRID_SPACING) * GRID_SPACING;
@@ -56,4 +57,9 @@ export const getSvgPosition = (event, zoomLevel, magneticSnap) => {
   }
 
   return { x, y }
+}
+
+export const checkCurrentPointInsideShape = (point) => {
+  const shapePolygon = document.getElementById('shapePolygon')
+  return shapePolygon.isPointInFill(point)
 }
