@@ -8,47 +8,51 @@ export const convertSvgToDxf = (svgContent) => {
   let li = 0;
   let pi = 0;
   let bi = 0;
+  let si = 0;
 
-  // // Extract lines
-  const lines = svgContent.match(/<line(?!.*\bclass\s*=\s*["']?\bgrid-line\b).*?<\/line>/g);
+  const lines = getClassMatchElements(svgContent, 'line', 'export');
 
   if (lines) {
     lines.forEach((line, index) => {
-      const x1 = parseFloat(line.match(/x1="([\d.]+)"/)[1] / inchPerPixel);
-      const y1 = parseFloat(line.match(/y1="([\d.]+)"/)[1] / inchPerPixel);
-      const x2 = parseFloat(line.match(/x2="([\d.]+)"/)[1] / inchPerPixel);
-      const y2 = parseFloat(line.match(/y2="([\d.]+)"/)[1] / inchPerPixel);
+      const x1 = parseFloat(line.getAttribute('x1') / inchPerPixel);
+      const y1 = parseFloat(line.getAttribute('y1') / inchPerPixel);
+      const x2 = parseFloat(line.getAttribute('x2') / inchPerPixel);
+      const y2 = parseFloat(line.getAttribute('y2') / inchPerPixel);
       const point1 = [x1, -y1];
       const point2 = [x2, -y2];
 
       const newLine = new makerjs.paths.Line(point1, point2);
 
-      const classMatch = line.match(/class="([^"]+)"/);
-      const className = classMatch ? classMatch[1] : '';
+      const classList = line.getAttribute('class');
+      const bevelClassMatch = classList && classList.includes('bevel');
+      const seamClassMatch = classList && classList.includes('seam-line');
 
       // add layer
-      if (className === 'bevel') {
+      if (bevelClassMatch) {
         bi++;
-        const strokeMatch = line.match(/stroke="([^"]+)"/);
-        const stroke = strokeMatch ? strokeMatch[1] : 'black';
+        const stroke = line.getAttribute('stroke')
         // newLine.layer = stroke;
         newLine.layer = stroke + '-bevel-' + bi;
+      }
+      else if (seamClassMatch) {
+        si++;
+        newLine.layer = 'seam-' + si;
       }
       else {
         li++;
         newLine.layer = 'line-' + li
       }
 
-      // add to model
+      //add to model
       makerjs.model.addPath(model, newLine, "line")
     });
   }
 
-  const paths = svgContent.match(/<path(?!.*\bclass\s*=\s*["']?\bpolygon\b).*?<\/path>/g);
+  const paths = getClassMatchElements(svgContent, 'path', 'export');
 
   if (paths) {
     paths.forEach((path, index) => {
-      const d = path.match(/<path.*?\bd\s*=\s*"([^"]+)"/)[1];
+      const d = path.getAttribute('d');
       const match = d.match(/M\s*([\d.]+)\s+([\d.]+)\s*Q\s*([\d.]+)\s+([\d.]+)\s*,\s*([\d.]+)\s+([\d.]+)/);
 
       if (!match) {
@@ -62,14 +66,13 @@ export const convertSvgToDxf = (svgContent) => {
 
       const newPath = new makerjs.models.BezierCurve(points, .01);
 
-      const classMatch = path.match(/class="([^"]+)"/);
-      const className = classMatch ? classMatch[1] : '';
+      const classList = path.getAttribute('class');
+      const bevelClassMatch = classList && classList.includes('bevel');
 
       // add layer
-      if (className === 'bevel') {
+      if (bevelClassMatch) {
         bi++;
-        const strokeMatch = path.match(/stroke="([^"]+)"/);
-        const stroke = strokeMatch ? strokeMatch[1] : 'black';
+        const stroke = path.getAttribute('stroke')
         // newPath.layer = stroke;
         newPath.layer = stroke + '-bevel-' + bi;
       }
@@ -127,3 +130,14 @@ export const convertSvgToDwg = async (svgContent) => {
     // throw error;
   }
 }
+
+export const getClassMatchElements = (source, tag, className) => {
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = source;
+
+  // Query for all elements with class containing "export"
+  const exportLineElements = tempDiv.querySelectorAll(`${tag}[class*="${className}"]`);
+
+  // Convert NodeList to Array for easier manipulation
+  return Array.from(exportLineElements);
+} 

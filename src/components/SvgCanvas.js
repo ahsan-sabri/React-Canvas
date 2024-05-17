@@ -84,7 +84,7 @@ function PolygonDrawer() {
       if (line.bezierCurvature === 0) {
         rlines.push(
           <line key={`${target}-line-${i}`}
-            className={`line ${target}-line`}
+            className={`line export ${target}-line`}
             x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
             stroke={isSelected ? '#ff0000' : 'black'}
             strokeWidth={isSelected ? 6 : 4}
@@ -97,7 +97,7 @@ function PolygonDrawer() {
         const controlPoint = getBezierControlPoint(line.x1, line.y1, line.x2, line.y2, line.bezierCurvature)
         rlines.push(
           <path key={`${target}-line-${i}`}
-            className={`line ${target}-line`}
+            className={`path export ${target}-path`}
             d={`M ${line.x1} ${line.y1} Q ${controlPoint.x} ${controlPoint.y}, ${line.x2} ${line.y2}`}
             stroke={isSelected ? '#ff0000' : 'black'}
             fill={"transparent"}
@@ -481,7 +481,9 @@ function PolygonDrawer() {
     setZoomLevel(.8)
   }
 
-  // render shapes and elements
+  // // RENDER FUNCTIONS =======================>>
+
+  // render current point
   const renderCurrentPoint = () => {
     if (currentPoint) {
       if (activeTool === 'seam' || activeTool === 'measure') {
@@ -521,8 +523,6 @@ function PolygonDrawer() {
     }
     return null;
   };
-
-  // // RENDER FUNCTIONS =======================>>
 
   // New function to render the grid
   const renderGrid = () => {
@@ -646,6 +646,7 @@ function PolygonDrawer() {
       // Draw main line
       rlines.push(
         <line key={`seam-line-${i}`}
+          className='line export seam-line'
           x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
           stroke={'grey'}
           strokeWidth={3}
@@ -720,7 +721,7 @@ function PolygonDrawer() {
       if (line.bezierCurvature === 0) {
         bevel = <line
           key={`line-shadow-${stroke}-${index}`}
-          className='bevel'
+          className='line export bevel'
           x1={line.x1 - perpendicularX}
           y1={line.y1 - perpendicularY}
           x2={line.x2 - perpendicularX}
@@ -739,7 +740,7 @@ function PolygonDrawer() {
 
         bevel = <path
           key={`path-shadow-${stroke}-${index}`}
-          className='bevel'
+          className='path export bevel'
           d={`M ${line.x1 - perpendicularX} ${line.y1 - perpendicularY} Q ${controlPoint.x} ${controlPoint.y}, ${line.x2 - perpendicularX} ${line.y2 - perpendicularY}`}
           fill={"transparent"}
           stroke={stroke}
@@ -844,7 +845,7 @@ function PolygonDrawer() {
     pathString += ' Z';
 
     // Return the path element
-    return <path className='polygon' d={pathString} fill="rgba(255, 255, 255, .3)" />;
+    return <path className='polygon' d={pathString} fill="rgba(255, 255, 255, .8)" />;
   };
 
   return (
