@@ -74,7 +74,7 @@ export const getSvgPosition = (event, zoomLevel, magneticSnap, activeTool) => {
   }
 
   // seam points on the line only if active tool is seam 
-  if (activeTool === 'seam') {
+  if (activeTool === 'seam' || activeTool === 'measure') {
     const lines = document.getElementsByClassName('line');
     const nearestPoint = findNearestPointOnLines(lines, { x, y });
 

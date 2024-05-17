@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { saveAs } from 'file-saver';
-import { getSvgPosition, checkCurrentPointInsideShape, checkCurrentPointOnTheLine } from '../utils/canvas';
+import MeasuringLine from './MeasuringLine';
+import { getSvgPosition, checkCurrentPointInsideShape } from '../utils/canvas';
 import { getBezierControlPoint, drawLineFromPoints, getNewCoordinateOnLineLengthChange, drawPolygonPath } from '../utils/line';
 import { convertSvgToDxf, convertSvgToDwg } from '../utils/export';
 import { getShapePoints } from '../utils/shapes';
@@ -14,9 +15,11 @@ function PolygonDrawer() {
   const [points, setPoints] = useState([]);
   const [cutoutPoints, setCutoutPoints] = useState([]);
   const [seamPoints, setSeamPoints] = useState([]);
+  const [measurePoints, setMeasurePoints] = useState([]);
   const [lines, setLines] = useState([]);
   const [cutoutLines, setCutoutLines] = useState([]);
   const [seamLines, setSeamLines] = useState([]);
+  const [measureLines, setMeasureLines] = useState([]);
   const [currentPoint, setCurrentPoint] = useState(null);
   const [selectedLineIndex, setSelectedLineIndex] = useState(null);
   const [selectedLine, setSelectedLine] = useState(null);
@@ -218,6 +221,21 @@ function PolygonDrawer() {
                 const newSeamline = drawLineFromPoints(seamLines, seamPoints[seamPoints.length - 1], newPoint, seamPoints.length - 2, isCutoutClosed)
                 if (newSeamline) {
                   setSeamLines([...seamLines, newSeamline]);
+                }
+              }
+
+              break;
+
+            case 'measure':
+              // set new point 
+              setMeasurePoints([...measurePoints, newPoint]);
+              addActionToHistory({ type: 'addMeasurePoint', point: newPoint })
+
+              //draw line
+              if (measurePoints.length % 2) {
+                const newMeasureline = drawLineFromPoints(measureLines, measurePoints[measurePoints.length - 1], newPoint, measurePoints.length - 2, isCutoutClosed)
+                if (newMeasureline) {
+                  setMeasureLines([...measureLines, newMeasureline]);
                 }
               }
 
@@ -447,8 +465,12 @@ function PolygonDrawer() {
     setActiveTool(null)
     setPoints([])
     setCutoutPoints([])
+    setSeamPoints([])
+    setMeasurePoints([])
     setLines([])
     setCutoutLines([])
+    setSeamLines([])
+    setMeasureLines([])
     setSelectedLineIndex(null)
     setActionHistory([])
     setZoomLevel(.8)
@@ -462,16 +484,42 @@ function PolygonDrawer() {
   // render shapes and elements
   const renderCurrentPoint = () => {
     if (currentPoint) {
-      return <circle
-        id='currentPoint'
-        cx={currentPoint.x}
-        cy={currentPoint.y}
-        r={8}
-        fill="transparent"
-        stroke="#bed929"
-        strokeWidth="4"
-      />
+      if (activeTool === 'seam' || activeTool === 'measure') {
+        return (
+          <g>
+            <line
+              x1={currentPoint.x - 6}
+              y1={currentPoint.y - 6}
+              x2={currentPoint.x + 6}
+              y2={currentPoint.y + 6}
+              stroke="grey"
+              strokeWidth={2}
+            />
+            <line
+              x1={currentPoint.x + 6}
+              y1={currentPoint.y - 6}
+              x2={currentPoint.x - 6}
+              y2={currentPoint.y + 6}
+              stroke="grey"
+              strokeWidth={2}
+            />
+          </g>
+        );
+      } else {
+        return (
+          <circle
+            id="currentPoint"
+            cx={currentPoint.x}
+            cy={currentPoint.y}
+            r={8}
+            fill="transparent"
+            stroke="#bed929"
+            strokeWidth={4}
+          />
+        );
+      }
     }
+    return null;
   };
 
   // // RENDER FUNCTIONS =======================>>
@@ -611,11 +659,44 @@ function PolygonDrawer() {
       const lastPoint = seamPoints[seamPoints.length - 1];
 
       rlines.push(
-        <line key={`seam-${points.length}`}
+        <line key={`seam-${seamPoints.length}`}
           x1={lastPoint.x} y1={lastPoint.y} x2={currentPoint.x} y2={currentPoint.y}
           stroke={'grey'}
           strokeWidth={4}
           strokeDasharray={[7, 7]}
+        />
+      );
+    }
+
+    return rlines;
+  };
+
+  const renderMeasureLines = () => {
+    const rlines = [];
+
+    // Draw seam lines between consecutive points
+    for (let i = 0; i < measureLines.length; i++) {
+      const line = measureLines[i];
+
+      // Draw main line
+      rlines.push(
+        <MeasuringLine key={`measure-line-${i}`}
+          x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2}
+        // stroke={'grey'}
+        // strokeWidth={3}
+        />
+      );
+    }
+
+    // Draw line between last point and current point if not closed
+    if (currentPoint && measurePoints.length % 2 !== 0) {
+      const lastPoint = measurePoints[measurePoints.length - 1];
+
+      rlines.push(
+        <MeasuringLine key={`measure-${measurePoints.length}`}
+          x1={lastPoint.x} y1={lastPoint.y} x2={currentPoint.x} y2={currentPoint.y}
+        // stroke={'grey'}
+        // strokeWidth={4}
         />
       );
     }
@@ -795,22 +876,7 @@ function PolygonDrawer() {
           height="720px"
           style={{ display: 'none' }}
         >
-          <defs>
-            <marker id="arrow" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="black" />
-            </marker>
-          </defs>
-          <line x1="30" y1="400" x2="30" y2="715" stroke="red" markerEnd="url(#arrow)" />
-          <text
-            x={30} y={350}
-            textAnchor="middle"
-            dominantBaseline="middle"
-            transform="translate(-320,380) rotate(270)"
-            style={{ textWeight: "bold" }}
-          >
-            180 inches
-          </text>
-          <line x1="30" y1="300" x2="30" y2="10" stroke="red" markerEnd="url(#arrow)" />
+
         </svg>
         {/* drawing canvas  */}
         <div style={{ overflow: 'scroll', border: '4px dotted #D7DC3C' }}>
@@ -835,6 +901,7 @@ function PolygonDrawer() {
             {renderCutoutLines()}
             {renderCutoutPoints()}
             {renderSeamLines()}
+            {renderMeasureLines()}
             {renderCurrentPoint()}
             {hoverFirstPoint && !isClosed && (
               <circle
@@ -990,6 +1057,14 @@ function PolygonDrawer() {
               <h4 style={{ marginBottom: '10px' }}>Tools: </h4>
               <input
                 type="radio"
+                value=""
+                checked={!activeTool}
+                disabled={!isClosed}
+                onChange={(e) => handleActiveTool(null)}
+              />
+              <span style={{ marginRight: "10px" }}>None</span>
+              <input
+                type="radio"
                 value="cutout"
                 checked={activeTool === 'cutout'}
                 disabled={!isClosed}
@@ -1012,14 +1087,14 @@ function PolygonDrawer() {
                 onChange={(e) => handleActiveTool(e.target.value)}
               />
               <span style={{ marginRight: "10px" }}>Seam</span>
-              <input
+              {/* <input
                 type="radio"
                 value="cable"
                 checked={activeTool === 'cable'}
                 disabled={!isClosed}
                 onChange={(e) => handleActiveTool(e.target.value)}
               />
-              <span style={{ marginRight: "10px" }}>Cable Cover</span>
+              <span style={{ marginRight: "10px" }}>Cable Cover</span> */}
 
             </div>
 
