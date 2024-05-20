@@ -171,7 +171,7 @@ function PolygonDrawer() {
   };
 
   const handlePointClick = (event) => {
-    const svgPos = getSvgPosition(event, zoomLevel, magneticSnap, activeTool);
+    const svgPos = getSvgPosition(event, zoomLevel, magneticSnap, activeTool, pointerTarget);
     const newPoint = svgPos;
 
     if (isClosed) {
@@ -280,7 +280,7 @@ function PolygonDrawer() {
 
   const handleMouseMove = (event) => {
     // get mouse position on svg 
-    const svgPos = getSvgPosition(event, zoomLevel, magneticSnap, activeTool);
+    const svgPos = getSvgPosition(event, zoomLevel, magneticSnap, activeTool, pointerTarget);
 
     // check shape is closed 
     if (isClosed) {
@@ -558,6 +558,7 @@ function PolygonDrawer() {
   const renderPoints = () => {
     return points.map((point, index) => (
       <circle key={index}
+        className='point shape-point'
         cx={point.x}
         cy={point.y}
         r={index === 0 && hoverFirstPoint && !isClosed ? 15 : 10}
@@ -571,12 +572,14 @@ function PolygonDrawer() {
   const renderCutoutPoints = () => {
     return cutoutPoints.map((cpoint, index) => (
       <circle key={`cutout-point-${index}`}
+        className='point cutout-point'
         cx={cpoint.x}
         cy={cpoint.y}
         r={index === 0 && hoverFirstPoint && !isCutoutClosed ? 15 : 10}
         fill="#bed929"
         cursor={"move"}
         onMouseDown={() => handlePointDrag(index, cpoint, 'cutout')}
+        clipPath="url(#clipPath)"
       />
     ));
   };
@@ -624,6 +627,7 @@ function PolygonDrawer() {
           x1={lastPoint.x} y1={lastPoint.y} x2={currentPoint.x} y2={currentPoint.y}
           stroke={'black'}
           strokeWidth={4}
+          clipPath="url(#clipPath)"
         />
       );
 

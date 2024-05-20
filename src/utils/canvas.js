@@ -59,7 +59,7 @@ function distanceToLineSegment(x, y, x1, y1, x2, y2) {
   }
 }
 
-export const getSvgPosition = (event, zoomLevel, magneticSnap, activeTool) => {
+export const getSvgPosition = (event, zoomLevel, magneticSnap, activeTool, pointerTarget) => {
   const svgRect = event.currentTarget.getBoundingClientRect();
   let x = (event.clientX - svgRect.left) / zoomLevel;
   let y = (event.clientY - svgRect.top) / zoomLevel;
@@ -82,6 +82,22 @@ export const getSvgPosition = (event, zoomLevel, magneticSnap, activeTool) => {
     y = nearestPoint.y
   }
 
+  if (activeTool === 'cutout' && !checkCurrentPointInsideShape({ x, y })) {
+    const lines = document.getElementsByClassName('shape-line');
+    const nearestPoint = findNearestPointOnLines(lines, { x, y });
+
+    x = nearestPoint.x
+    y = nearestPoint.y
+  }
+
+  if (pointerTarget === 'cutout' && !checkCurrentPointInsideShape({ x, y })) {
+    const lines = document.getElementsByClassName('shape-line');
+    const nearestPoint = findNearestPointOnLines(lines, { x, y });
+
+    x = nearestPoint.x
+    y = nearestPoint.y
+  }
+
   return { x, y }
 }
 
@@ -91,7 +107,7 @@ export const checkCurrentPointInsideShape = (point) => {
 }
 
 // Function to find the nearest point on the lines from a given point
-function findNearestPointOnLines(lines, point) {
+export const findNearestPointOnLines = (lines, point) => {
   let nearestPoint;
   let minDistance = Infinity;
 
@@ -114,7 +130,22 @@ function findNearestPointOnLines(lines, point) {
         x: x1 + t * (x2 - x1),
         y: y1 + t * (y2 - y1)
       };
+
+      // update nearest point if the calculated point is not on the line
+      if (t < 0 || t > 1) {
+        nearestPoint = { x: x2, y: y2 };
+        const distToX1Y1 = Math.sqrt((point.x - x1) ** 2 + (point.y - y1) ** 2);
+        const distToX2Y2 = Math.sqrt((point.x - x2) ** 2 + (point.y - y2) ** 2);
+
+        if (distToX1Y1 < distToX2Y2) {
+          nearestPoint = { x: x1, y: y1 };
+        }
+        else {
+          nearestPoint = { x: x2, y: y2 };
+        }
+      }
     }
+
   }
 
   return nearestPoint;
